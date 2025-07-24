@@ -1,0 +1,209 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Application Services Automation API",
+    "version": "1.0.0",
+    "description": "APIs for creating products and orders."
+  },
+  "components": {
+    "schemas": {
+      "Product": {
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "string",
+            "description": "Unique ID of the product."
+          },
+          "productName": {
+            "type": "string",
+            "description": "product name."
+          },
+          "productPrice": {
+            "type": "string",
+            "description": "product price."
+          }
+        }
+      },
+      "Order": {
+        "type": "object",
+        "properties": {
+          "orderId": {
+            "type": "string",
+            "description": "Unique ID of the order."
+          },
+          "quantity": {
+            "type": "string",
+            "description": "Number of products to be ordered."
+          },
+          "product": {
+            "$ref": "#/components/schemas/Product"
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/products/create-product": {
+      "post": {
+        "summary": "API to create a product",
+        "description": "create a product. The API takes product name and product price.",
+        "operationId": "createProduct",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "productName": {
+                    "type": "string",
+                    "description": "product name."
+                  },
+                  "productPrice": {
+                    "type": "string",
+                    "description": "product price."
+                  }
+                },
+                "required": ["productName", "productPrice"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Product created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Product"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request. One or more required fields are missing or invalid."
+          }
+        }
+      }
+    },
+    "/products": {
+      "get": {
+        "summary": "API to gets all products",
+        "description": "Gets all product details. The API gets all product details.",
+        "operationId": "getProducts",
+        "responses": {
+          "200": {
+            "description": "Products retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Product"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/products/{productId}": {
+      "get": {
+        "summary": "API to get a product",
+        "description": "Gets single product details. The API takes productId and gets the product details.",
+        "operationId": "getProduct",
+        "parameters": [
+          {
+            "name": "productId",
+            "in": "path",
+            "description": "Unique ID of the product",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Products retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Product"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request. One or more required fields are missing or invalid."
+          }
+        }
+      }
+    },
+    "/orders/create-order": {
+      "post": {
+        "summary": "API to create a order",
+        "description": "create a order. The API takes a product, quantity and orders the product.",
+        "operationId": "createOrder",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "product": {
+                    "$ref": "#/components/schemas/Product"
+                  },
+                  "quantity": {
+                    "type": "string",
+                    "description": "Number of products to be ordered."
+                  }
+                },
+                "required": ["product", "quantity"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Order created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request. One or more required fields are missing or invalid."
+          }
+        }
+      }
+    },
+    "/orders": {
+      "get": {
+        "summary": "API to gets all orders",
+        "description": "Gets all orders. The API get all order details.",
+        "operationId": "getOrders",
+        "responses": {
+          "200": {
+            "description": "Orders retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Order"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
