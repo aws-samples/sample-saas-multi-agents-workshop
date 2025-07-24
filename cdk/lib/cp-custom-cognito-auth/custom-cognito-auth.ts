@@ -28,10 +28,14 @@ export class CustomCognitoAuth extends sbt.CognitoAuth {
       {
         entry: path.join(__dirname, "auth-custom-resource"),
         runtime: lambda.Runtime.PYTHON_3_12,
+        architecture: lambda.Architecture.ARM_64,
         index: "index.py",
         handler: "handler",
         timeout: Duration.seconds(60),
         layers: [lambdaPowertoolsLayer],
+        bundling: {
+          platform: "linux/arm64",
+        },
       }
     );
     this.userPool.grant(
