@@ -3,7 +3,7 @@
 
 import "source-map-support/register";
 import * as cdk from "aws-cdk-lib";
-import { BootstrapTemplateStack } from "../lib/tenant-template/bootstrap-template-stack";
+// import { BootstrapTemplateStack } from "../lib/tenant-template/bootstrap-template-stack";
 import { MultiAgentsBootstrapTemplateStack } from "../lib/tenant-template/multi-agents-bootstrap-template-stack";
 import { ControlPlaneStack } from "../lib/control-plane-stack";
 import { CoreUtilsTemplateStack } from "../lib/core-utils-template-stack";
