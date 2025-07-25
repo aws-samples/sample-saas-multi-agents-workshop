@@ -26,6 +26,7 @@ API_GATEWAY_USAGE_PLAN_ID_OUTPUT_PARAM_NAME="ApiGatewayUsagePlan"
 S3_PARAM_NAME="SaaSGenAIWorkshopS3Bucket"
 INGESTION_LAMBDA_ARN_PARAM_NAME="SaaSGenAIWorkshopTriggerIngestionLambdaArn"
 OSSC_ARN_PARAM_NAME="SaaSGenAIWorkshopOSSCollectionArn"
+TENANT_DATA_TABLE_PARAM_NAME="TenantDataTableName"
 INPUT_TOKENS="10000"
 OUTPUT_TOKENS="500"
 
@@ -39,6 +40,7 @@ export API_GATEWAY_USAGE_PLAN_ID=$(aws cloudformation describe-stacks --stack-na
 export S3_BUCKET=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='$S3_PARAM_NAME'].OutputValue" --output text)
 export TRIGGER_PIPELINE_INGESTION_LAMBDA_ARN=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='$INGESTION_LAMBDA_ARN_PARAM_NAME'].OutputValue" --output text)
 export OPENSEARCH_SERVERLESS_COLLECTION_ARN=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='$OSSC_ARN_PARAM_NAME'].OutputValue" --output text)
+export TENANT_DATA_TABLE=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='$TENANT_DATA_TABLE_PARAM_NAME'].OutputValue" --output text)
 
 # Create Tenant API Key
 generate_api_key() {
@@ -64,9 +66,13 @@ check_error() {
 
 # Invoke tenant provisioning service
 pip3 install -r lib/tenant-template/tenant-provisioning/requirements.txt
-
 provision_name="Tenant Provisioning"
-# TODO: Lab1 - Add tenant provisioning service
+# Add tenant provisioning service
+export TENANT_NAME=$CDK_PARAM_TENANT_NAME
+export TENANT_DATA_TABLE=${TENANT_DATA_TABLE:-"TenantDataTable"}
+tenant_provision_output=$(python3 lib/tenant-template/tenant-provisioning/tenant_provisioning_service.py --tenantid $CDK_PARAM_TENANT_ID 2>&1 >/dev/null && exit_code=$?) || exit_code=$?
+check_error "$provision_name" $exit_code "$tenant_provision_output"
+
 
 
 export KNOWLEDGE_BASE_NAME=$CDK_PARAM_TENANT_ID

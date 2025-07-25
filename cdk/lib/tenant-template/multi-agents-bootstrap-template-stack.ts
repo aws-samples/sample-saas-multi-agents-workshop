@@ -62,6 +62,20 @@ export class MultiAgentsBootstrapTemplateStack extends Stack {
         resources: [dataBucket.bucketArn, `${dataBucket.bucketArn}/*`],
       })
     );
+    
+    // Add permissions for tenant mock data
+    bedrockRole.addToPolicy(
+      new PolicyStatement({
+        actions: ['s3:GetObject', 's3:ListBucket'],
+        resources: [
+          `${dataBucket.bucketArn}/*/logs/*`,
+          `${dataBucket.bucketArn}/*/kb/*`,
+          `${dataBucket.bucketArn}/*/resolutions/*`,
+          `${dataBucket.bucketArn}/*/sops/*`,
+          `${dataBucket.bucketArn}/*/meeting-notes.txt`
+        ],
+      })
+    );
 
     // 4. Add Bedrock permissions to the role
     bedrockRole.addToPolicy(
@@ -89,10 +103,17 @@ export class MultiAgentsBootstrapTemplateStack extends Stack {
     const collectionName = "saas-workshop-vector-collection";
 
 
+    // Create a pooled knowledge base for all tenants
     const knowledgeBase = new bedrock.VectorKnowledgeBase(this, 'KnowledgeBase', {
       name: 'saas-workshop-pooled-knowledge-base',
       embeddingsModel: bedrock.BedrockFoundationModel.TITAN_EMBED_TEXT_V2_1024,
-      instruction: 'Use this knowledge base to answer questions about books. ' + 'It contains the full text of novels.',
+      instruction: 'Use this knowledge base to answer questions about tenant data. ' +
+                  'It contains knowledge base documents, resolution documents, SOPs, and meeting notes for all tenants.',
+    });
+
+    const sourceCodeS3Bucket = new Bucket(this, "TenantSourceCodeBucket", {
+      autoDeleteObjects: true,
+      removalPolicy: RemovalPolicy.DESTROY,
     });
 
     // Cost and Usage resources (Commented out for the moment)
@@ -153,18 +174,41 @@ export class MultiAgentsBootstrapTemplateStack extends Stack {
         //     curAthena.node.addDependency(costUsageReportUpload);
     
     
-    // // 6. Create a data source for the knowledge base
-    // const dataSource = new bedrock.CfnDataSource(this, 'SimpleDataSource', {
-    //   name: 'SimpleS3DataSource',
-    //   knowledgeBaseId: knowledgeBase.attrKnowledgeBaseId,
-    //   dataSourceConfiguration: {
-    //     type: 'S3',
-    //     s3Configuration: {
-    //       bucketArn: dataBucket.bucketArn,
-    //       inclusionPrefixes: ['tenant-data/']
-    //     }
+    // 6. Create a data source for the pooled knowledge base
+    // This data source will include all tenant data in the S3 bucket
+    
+    // Add comment explaining the data structure for tenant data in S3
+    // Each tenant will have the following structure in S3:
+    // tenant-id/
+    //   ├── logs/
+    //   │   └── microservice-logs.json (not included in knowledge base)
+    //   ├── kb/
+    //   │   └── [knowledge-base-documents].md (included in knowledge base)
+    //   ├── resolutions/
+    //   │   └── [resolution-documents].md (included in knowledge base)
+    //   ├── sops/
+    //   │   └── [sop-documents].md (included in knowledge base)
+    //   └── meeting-notes.txt (included in knowledge base)
+    
+    // The DynamoDB table will store structured meeting data with the following format:
+    // {
+    //   "tenantId": "tenant-id",
+    //   "dataId": "meeting#meeting-id",
+    //   "data": {
+    //     "meeting_id": "meeting-id",
+    //     "date": "YYYY-MM-DD",
+    //     "action_items": [
+    //       {
+    //         "item_id": "item-id",
+    //         "description": "action description",
+    //         "owner": "owner name or [OWNER_MISSING]",
+    //         "due_date": "YYYY-MM-DD or [DUE_DATE_MISSING]",
+    //         "status": "pending|completed|in_progress|delayed",
+    //         "context": "relevant discussion context"
+    //       }
+    //     ]
     //   }
-    // });
+    // }
 
     // Output the resource ARNs and names for reference
     new CfnOutput(this, "DataBucketName", {
@@ -182,9 +226,28 @@ export class MultiAgentsBootstrapTemplateStack extends Stack {
       description: "The name of the DynamoDB table for tenant data"
     });
 
-    // new CfnOutput(this, "KnowledgeBaseId", {
-    //   value: knowledgeBase.attrKnowledgeBaseId,
-    //   description: "The ID of the Bedrock Knowledge Base"
-    // });
+    new CfnOutput(this, "TenantSourceCodeS3Bucket", {
+      value: sourceCodeS3Bucket.bucketName,
+    });
+
+    new CfnOutput(this, "KnowledgeBaseId", {
+      value: knowledgeBase.knowledgeBaseId,
+      description: "The ID of the Bedrock Knowledge Base"
+    });
+    
+    new CfnOutput(this, "SaaSGenAIWorkshopS3Bucket", {
+      value: dataBucket.bucketName,
+      description: "The name of the S3 bucket for tenant data"
+    });
+    
+    new CfnOutput(this, "SaaSGenAIWorkshopTriggerIngestionLambdaArn", {
+      value: "dummy-value", // This will be replaced with actual Lambda ARN in a real implementation
+      description: "The ARN of the Lambda function to trigger ingestion"
+    });
+    
+    new CfnOutput(this, "SaaSGenAIWorkshopOSSCollectionArn", {
+      value: "dummy-value", // This will be replaced with actual collection ARN in a real implementation
+      description: "The ARN of the OpenSearch Serverless collection"
+    });
   }
 }

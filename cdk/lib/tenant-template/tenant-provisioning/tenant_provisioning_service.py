@@ -39,8 +39,17 @@ def provision_tenant_resources(tenant_id):
     rule_name=f's3rule-{tenant_id}'
 
     try:
-        # TODO: Lab1 - Add provision tenant resources
+        # Create S3 tenant prefix and EventBridge rule
+        rule_name = __create_s3_tenant_prefix(tenant_id, rule_name)
         
+        # Create OpenSearch serverless tenant index
+        __create_opensearch_serverless_tenant_index(tenant_id, kb_collection_endpoint_domain)
+        
+        # Generate and upload mock tenant data
+        tenant_name = os.environ.get('TENANT_NAME', tenant_id)
+        __generate_tenant_mock_data(tenant_id, tenant_name)
+        
+        # Add API key for tenant
         __api_gw_add_api_key(tenant_id)
         return 0
     except Exception as e:
@@ -84,89 +93,8 @@ def __get_opensearch_serverless_collection_details():
         logging.error('Error occured while getting OpenSearch serverless collection details', e)
         raise Exception('Error occured while getting OpenSearch serverless collection details') from e
     
-def __create_tenant_knowledge_base(tenant_id, kb_collection_name, rule_name):
-    try:
-        tenant_kb_role_arn = __create_tenant_kb_role(tenant_id)
-
-        storage_configuration = {
-            'opensearchServerlessConfiguration': {
-                'collectionArn': OPENSEARCH_SERVERLESS_COLLECTION_ARN, 
-                'fieldMapping': {
-                    'metadataField': TENANT_KB_METADATA_FIELD,
-                    'textField': TENANT_KB_TEXT_FIELD,
-                    'vectorField': TENANT_KB_VECTOR_FIELD
-                },
-                'vectorIndexName': tenant_id
-            },
-            'type': 'OPENSEARCH_SERVERLESS'
-        }
-
-        
-        __add_data_access_policy(tenant_id, tenant_kb_role_arn, kb_collection_name)
-        
-        # Wait for the IAM role to be created
-        logging.info(f'Waiting for IAM role "bedrock-kb-role-{tenant_id}" to be created...')
-        time.sleep(10)
-
-        # Retries to handle delay in indexes or Data Access Policies to be available. Indexes and Data Access Policy could take few seconds to be available to Bedrock KB.
-        num_retries = 0
-        max_retries = 10
-        while num_retries < max_retries:
-            try:
-                response = bedrock_agent_client.create_knowledge_base(
-                    name=tenant_id,
-                    description=f'Knowledge base for tenant {tenant_id}',
-                    roleArn=tenant_kb_role_arn,
-                    knowledgeBaseConfiguration={
-                        'type': 'VECTOR',
-                        'vectorKnowledgeBaseConfiguration': {
-                            'embeddingModelArn': EMBEDDING_MODEL_ARN
-                        },
-                    },
-                    storageConfiguration=storage_configuration
-                );
-                logging.info(f'Tenant knowledge base created: {response}')
-            except bedrock_agent_client.exceptions.ValidationException as e:
-                error_message = e.response['Error']['Message']
-                logging.error(f'{error_message}. Retrying in 5 seconds')
-                time.sleep(5)
-                num_retries += 1
-            except bedrock_agent_client.exceptions.ConflictException:
-                logging.info(f"Knowledge base '{tenant_id}' already exists, skipping creation.")
-                break
-            except Exception as e:
-                logging.error('Error occurred while creating tenant knowledge base', e)
-                raise Exception('Error occurred while creating tenant knowledge base') from e
-        else:
-            logging.error('Maximum number of retries reached, giving up.')
-            raise Exception('Error occurred while creating tenant knowledge base: Maximum number of retries reached')
-        knowledge_base_id = response['knowledgeBase']['knowledgeBaseId']
-        logging.info(knowledge_base_id)
-        datasource_id = __create_tenant_data_source(tenant_id, knowledge_base_id)
-        __create_eventbridge_tenant_rule_target(tenant_id, knowledge_base_id, rule_name, datasource_id)
-
-    except Exception as e:
-        logging.error('Error occured while creating tenant knowledge base', e)
-        raise Exception('Error occured while creating tenant knowledge base') from e
-
-# Create Data Source in S3 per Tenant
-def __create_tenant_data_source(tenant_id, knowledge_base_id):
-    s3_bucket_arn=f'arn:aws:s3:::{S3_BUCKET}'
-    response = bedrock_agent_client.create_data_source(
-        name=tenant_id,
-        description=f'Data source for tenant {tenant_id}',
-        dataSourceConfiguration={
-            's3Configuration':{
-                'bucketArn':s3_bucket_arn,
-                'inclusionPrefixes': [f'{tenant_id}/']
-            },
-            'type': 'S3'
-        },
-        knowledgeBaseId=knowledge_base_id
-    )
-
-    return response['dataSource']['dataSourceId']
-    
+# Note: We're removing the __create_tenant_knowledge_base function since we're using a pooled knowledge base
+# The data will be automatically ingested through the S3 event notifications set up in the CDK stack
 
 def __create_tenant_kb_role(tenant_id):
     try:
@@ -453,6 +381,40 @@ def __generate_data_access_policy(tenant_id, tenant_kb_role_arn, kb_collection_n
         }
     ]
 
+def __generate_tenant_mock_data(tenant_id, tenant_name):
+    """Generate and upload mock data for the tenant"""
+    try:
+        import subprocess
+        import sys
+        import os
+        
+        # Get the path to the generate_tenant_mock_data.py script
+        script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+                                  "scripts", "generate_tenant_mock_data.py")
+        
+        # Make the script executable
+        subprocess.run(["chmod", "+x", script_path], check=True)
+        
+        # Get the tenant data table name from CloudFormation outputs
+        tenant_data_table = os.environ.get('TENANT_DATA_TABLE', 'TenantDataTable')
+        
+        # Run the script to generate and upload mock data
+        result = subprocess.run([
+            sys.executable,
+            script_path,
+            "--tenant-id", tenant_id,
+            "--tenant-name", tenant_name,
+            "--bucket", S3_BUCKET,
+            "--table", tenant_data_table
+        ], capture_output=True, text=True, check=True)
+        
+        logging.info(f"Successfully generated mock data for tenant {tenant_id}: {result.stdout}")
+        return True
+    except Exception as e:
+        logging.error(f"Error generating mock data for tenant {tenant_id}: {e}")
+        logging.error(f"Script output: {getattr(e, 'output', 'No output')}")
+        # Don't fail the entire provisioning process if mock data generation fails
+        return False
 
 
 if __name__ == '__main__':
