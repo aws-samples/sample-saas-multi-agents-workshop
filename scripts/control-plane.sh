@@ -1,9 +1,12 @@
 #!/bin/bash -e
 
-export CDK_PARAM_SYSTEM_ADMIN_EMAIL="$1"
+# Get operation and convert to lowercase for case-insensitive comparison
+STACK_OPERATION_ORIG=${1:-"create"}
+STACK_OPERATION=$(echo "$STACK_OPERATION_ORIG" | tr '[:upper:]' '[:lower:]')
+export CDK_PARAM_SYSTEM_ADMIN_EMAIL="$2"
 
 if [[ -z "$CDK_PARAM_SYSTEM_ADMIN_EMAIL" ]]; then
-  echo "Please provide system admin email"
+  echo "Usage: $0 [Create|Update|Delete] <system_admin_email>"
   exit 1
 fi
 
@@ -24,23 +27,53 @@ fi
 cd ../cdk
 npm install
 
-npx cdk bootstrap
-npx cdk deploy --all --require-approval never --concurrency 10 --asset-parallelism true
-
-CP_API_GATEWAY_URL=$(aws cloudformation describe-stacks --stack-name ControlPlaneStack --query "Stacks[0].Outputs[?OutputKey=='controlPlaneAPIEndpoint'].OutputValue" --output text)
-
-echo "Control plane api gateway url: $CP_API_GATEWAY_URL"
-
-
-S3_TENANT_SOURCECODE_BUCKET_URL=$(aws cloudformation describe-stacks --stack-name saas-genai-workshop-bootstrap-template --query "Stacks[0].Outputs[?OutputKey=='TenantSourceCodeS3Bucket'].OutputValue" --output text)
-echo "S3 bucket url: $S3_TENANT_SOURCECODE_BUCKET_URL"
-
-# Step 3: Define folder to upload and target S3 bucket
-SCRIPT_DIR="$(dirname "$(realpath "$0")")"   # Get the directory of the install.sh script
-FOLDER_PATH="$(dirname "$SCRIPT_DIR")"       # Get the parent folder of the script
-
-# Step 4: Upload the folder to the S3 bucket
-echo "Uploading folder $FOLDER_PATH to S3 $S3_TENANT_SOURCECODE_BUCKET_URL"
-aws s3 cp "$FOLDER_PATH" "s3://$S3_TENANT_SOURCECODE_BUCKET_URL" --recursive --exclude "cdk/cdk.out/*" --exclude "cdk/node_modules/*" --exclude ".git/*" --quiet
-
-echo "Installation completed successfully"
+if [[ "$STACK_OPERATION" == "create" || "$STACK_OPERATION" == "update" ]]; then
+    echo "Performing $STACK_OPERATION operation..."
+    
+    # Bootstrap CDK if creating
+    if [[ "$STACK_OPERATION" == "create" ]]; then
+        npx cdk bootstrap
+    fi
+    
+    # Deploy all stacks
+    npx cdk deploy --all --require-approval never --concurrency 10 --asset-parallelism true
+    
+    # Get API Gateway URL
+    CP_API_GATEWAY_URL=$(aws cloudformation describe-stacks --stack-name ControlPlaneStack --query "Stacks[0].Outputs[?OutputKey=='controlPlaneAPIEndpoint'].OutputValue" --output text)
+    echo "Control plane api gateway url: $CP_API_GATEWAY_URL"
+    
+    # Get S3 bucket URL
+    S3_TENANT_SOURCECODE_BUCKET_URL=$(aws cloudformation describe-stacks --stack-name saas-genai-workshop-bootstrap-template --query "Stacks[0].Outputs[?OutputKey=='TenantSourceCodeS3Bucket'].OutputValue" --output text)
+    echo "S3 bucket url: $S3_TENANT_SOURCECODE_BUCKET_URL"
+    
+    # Define folder to upload and target S3 bucket
+    SCRIPT_DIR="$(dirname "$(realpath "$0")")"   # Get the directory of the install.sh script
+    FOLDER_PATH="$(dirname "$SCRIPT_DIR")"       # Get the parent folder of the script
+    
+    # Upload the folder to the S3 bucket
+    echo "Uploading folder $FOLDER_PATH to S3 $S3_TENANT_SOURCECODE_BUCKET_URL"
+    aws s3 cp "$FOLDER_PATH" "s3://$S3_TENANT_SOURCECODE_BUCKET_URL" --recursive --exclude "cdk/cdk.out/*" --exclude "cdk/node_modules/*" --exclude ".git/*" --quiet
+    
+    echo "$STACK_OPERATION operation completed successfully"
+    
+elif [[ "$STACK_OPERATION" == "delete" ]]; then
+    echo "Performing delete operation..."
+    
+    # Get S3 bucket URL before deleting stacks
+    S3_TENANT_SOURCECODE_BUCKET_URL=$(aws cloudformation describe-stacks --stack-name saas-genai-workshop-bootstrap-template --query "Stacks[0].Outputs[?OutputKey=='TenantSourceCodeS3Bucket'].OutputValue" --output text 2>/dev/null || echo "")
+    
+    if [[ -n "$S3_TENANT_SOURCECODE_BUCKET_URL" ]]; then
+        echo "Emptying S3 bucket: $S3_TENANT_SOURCECODE_BUCKET_URL"
+        aws s3 rm "s3://$S3_TENANT_SOURCECODE_BUCKET_URL" --recursive
+    fi
+    
+    # Destroy all stacks
+    npx cdk destroy --all --force
+    
+    echo "Delete operation completed successfully"
+    
+else
+    echo "Invalid stack operation: $STACK_OPERATION_ORIG"
+    echo "Usage: $0 [Create|Update|Delete] <system_admin_email>"
+    exit 1
+fi

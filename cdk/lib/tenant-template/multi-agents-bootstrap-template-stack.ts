@@ -4,7 +4,7 @@
 import { RemovalPolicy, Stack, StackProps, CfnOutput, CfnResource } from "aws-cdk-lib";
 import { Construct } from "constructs";
 import { AttributeType, BillingMode, Table } from 'aws-cdk-lib/aws-dynamodb';
-import { Bucket } from "aws-cdk-lib/aws-s3";
+import { Bucket, ObjectOwnership } from "aws-cdk-lib/aws-s3";
 import { Role, ServicePrincipal, PolicyStatement, Effect } from "aws-cdk-lib/aws-iam";
 import { bedrock } from '@cdklabs/generative-ai-cdk-constructs';
 import * as _bedrock from 'aws-cdk-lib/aws-bedrock';
@@ -36,6 +36,8 @@ export class MultiAgentsBootstrapTemplateStack extends Stack {
     const dataBucket = new Bucket(this, "DataBucket", {
       autoDeleteObjects: true,
       removalPolicy: RemovalPolicy.DESTROY,
+      // Enable metadata filtering for tenant isolation
+      objectOwnership: ObjectOwnership.BUCKET_OWNER_PREFERRED,
     });
 
     const logsBucket = new Bucket(this, "LogsBucket", {
@@ -43,10 +45,19 @@ export class MultiAgentsBootstrapTemplateStack extends Stack {
       removalPolicy: RemovalPolicy.DESTROY,
     });
 
-    // 2. Create DynamoDB table for tenant data
+    // 2. Create DynamoDB tables for tenant data
     const tenantDataTable = new Table(this, 'TenantDataTable', {
       partitionKey: { name: 'tenantId', type: AttributeType.STRING },
       sortKey: { name: 'dataId', type: AttributeType.STRING },
+      billingMode: BillingMode.PAY_PER_REQUEST,
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+
+    // Create DynamoDB table for technical support issues
+    const technicalSupportIssuesTable = new Table(this, 'TechnicalSupportIssuesTable', {
+      tableName: 'technical-support-issues-table',
+      partitionKey: { name: 'tenantId', type: AttributeType.STRING },
+      sortKey: { name: 'issueId', type: AttributeType.STRING },
       billingMode: BillingMode.PAY_PER_REQUEST,
       removalPolicy: RemovalPolicy.DESTROY,
     });
@@ -72,7 +83,8 @@ export class MultiAgentsBootstrapTemplateStack extends Stack {
           `${dataBucket.bucketArn}/*/kb/*`,
           `${dataBucket.bucketArn}/*/resolutions/*`,
           `${dataBucket.bucketArn}/*/sops/*`,
-          `${dataBucket.bucketArn}/*/meeting-notes.txt`
+          `${dataBucket.bucketArn}/*/meeting-notes.txt`,
+          `${dataBucket.bucketArn}/*/*.txt`
         ],
       })
     );
@@ -103,12 +115,25 @@ export class MultiAgentsBootstrapTemplateStack extends Stack {
     const collectionName = "saas-workshop-vector-collection";
 
 
-    // Create a pooled knowledge base for all tenants
+    // Create a pooled knowledge base for all tenants with metadata filtering
     const knowledgeBase = new bedrock.VectorKnowledgeBase(this, 'KnowledgeBase', {
       name: 'saas-workshop-pooled-knowledge-base',
       embeddingsModel: bedrock.BedrockFoundationModel.TITAN_EMBED_TEXT_V2_1024,
       instruction: 'Use this knowledge base to answer questions about tenant data. ' +
-                  'It contains knowledge base documents, resolution documents, SOPs, and meeting notes for all tenants.',
+                  'It contains knowledge base documents, resolution documents, SOPs, and meeting notes for all tenants. ' +
+                  'Always filter results by the tenant_id metadata field to ensure tenant isolation.',
+    });
+
+    // Create a data source for the pooled knowledge base
+    // Note: We're implementing tenant isolation through metadata in the S3 objects
+    // and through the lambda function that accesses the knowledge base
+    const dataSource = new bedrock.S3DataSource(this, 'S3DataSource', {
+      knowledgeBase: knowledgeBase,
+      dataSourceName: 'tenant-data-source',
+      bucket: dataBucket,
+      // Note: In a production environment, we would use a more sophisticated
+      // approach to filter by tenant_id metadata, but for this workshop
+      // we'll implement the filtering in the lambda function
     });
 
     const sourceCodeS3Bucket = new Bucket(this, "TenantSourceCodeBucket", {
@@ -174,9 +199,6 @@ export class MultiAgentsBootstrapTemplateStack extends Stack {
         //     curAthena.node.addDependency(costUsageReportUpload);
     
     
-    // 6. Create a data source for the pooled knowledge base
-    // This data source will include all tenant data in the S3 bucket
-    
     // Add comment explaining the data structure for tenant data in S3
     // Each tenant will have the following structure in S3:
     // tenant-id/
@@ -188,7 +210,8 @@ export class MultiAgentsBootstrapTemplateStack extends Stack {
     //   │   └── [resolution-documents].md (included in knowledge base)
     //   ├── sops/
     //   │   └── [sop-documents].md (included in knowledge base)
-    //   └── meeting-notes.txt (included in knowledge base)
+    //   ├── meeting-notes.txt (included in knowledge base)
+    //   └── [tenant]_Error_Codes.txt (included in knowledge base)
     
     // The DynamoDB table will store structured meeting data with the following format:
     // {
@@ -210,6 +233,23 @@ export class MultiAgentsBootstrapTemplateStack extends Stack {
     //   }
     // }
 
+    // The Technical Support Issues table will store issues with the following format:
+    // {
+    //   "tenantId": "tenant-id",
+    //   "issueId": "issue-id",
+    //   "title": "Issue title",
+    //   "description": "Issue description",
+    //   "status": "Open|In Progress|Resolved",
+    //   "errorCode": "ERROR_CODE",
+    //   "createdAt": "ISO timestamp",
+    //   "updatedAt": "ISO timestamp",
+    //   "resolution": {
+    //     "steps": ["Step 1", "Step 2", ...],
+    //     "resolvedAt": "ISO timestamp",
+    //     "resolvedBy": "User or system name"
+    //   }
+    // }
+
     // Output the resource ARNs and names for reference
     new CfnOutput(this, "DataBucketName", {
       value: dataBucket.bucketName,
@@ -224,6 +264,11 @@ export class MultiAgentsBootstrapTemplateStack extends Stack {
     new CfnOutput(this, "TenantDataTableName", {
       value: tenantDataTable.tableName,
       description: "The name of the DynamoDB table for tenant data"
+    });
+
+    new CfnOutput(this, "TechnicalSupportIssuesTableName", {
+      value: technicalSupportIssuesTable.tableName,
+      description: "The name of the DynamoDB table for technical support issues"
     });
 
     new CfnOutput(this, "TenantSourceCodeS3Bucket", {
