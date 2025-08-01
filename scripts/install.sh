@@ -49,7 +49,7 @@ if [[ "$STACK_OPERATION" == "create" || "$STACK_OPERATION" == "update" ]]; then
     echo "Control plane api gateway url: $CP_API_GATEWAY_URL"
     
     # Get S3 bucket URL
-    S3_TENANT_SOURCECODE_BUCKET_URL=$(aws cloudformation describe-stacks --stack-name saas-genai-workshop-bootstrap-template --query "Stacks[0].Outputs[?OutputKey=='TenantSourceCodeS3Bucket'].OutputValue" --output text)
+    S3_TENANT_SOURCECODE_BUCKET_URL=$(aws cloudformation describe-stacks --stack-name saas-genai-workshop-common-resources --query "Stacks[0].Outputs[?OutputKey=='TenantSourceCodeS3Bucket'].OutputValue" --output text)
     echo "S3 bucket url: $S3_TENANT_SOURCECODE_BUCKET_URL"
     
     # Define folder to upload and target S3 bucket
@@ -66,7 +66,7 @@ elif [[ "$STACK_OPERATION" == "delete" ]]; then
     echo "Performing delete operation..."
     
     # Get S3 bucket URL before deleting stacks
-    S3_TENANT_SOURCECODE_BUCKET_URL=$(aws cloudformation describe-stacks --stack-name saas-genai-workshop-bootstrap-template --query "Stacks[0].Outputs[?OutputKey=='TenantSourceCodeS3Bucket'].OutputValue" --output text 2>/dev/null || echo "")
+    S3_TENANT_SOURCECODE_BUCKET_URL=$(aws cloudformation describe-stacks --stack-name saas-genai-workshop-common-resources --query "Stacks[0].Outputs[?OutputKey=='TenantSourceCodeS3Bucket'].OutputValue" --output text 2>/dev/null || echo "")
     
     if [[ -n "$S3_TENANT_SOURCECODE_BUCKET_URL" ]]; then
         echo "Emptying S3 bucket: $S3_TENANT_SOURCECODE_BUCKET_URL"

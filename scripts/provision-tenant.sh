@@ -3,7 +3,7 @@
 # Enable nocasematch option
 shopt -s nocasematch
 
-S3_TENANT_SOURCECODE_BUCKET_URL=$(aws cloudformation describe-stacks --stack-name saas-genai-workshop-bootstrap-template --query "Stacks[0].Outputs[?OutputKey=='TenantSourceCodeS3Bucket'].OutputValue" --output text)
+S3_TENANT_SOURCECODE_BUCKET_URL=$(aws cloudformation describe-stacks --stack-name saas-genai-workshop-common-resources --query "Stacks[0].Outputs[?OutputKey=='TenantSourceCodeS3Bucket'].OutputValue" --output text)
 export CDK_PARAM_CODE_REPOSITORY_NAME="saas-genai-workshop"
 
 # Download the folder from S3 to local directory
@@ -18,7 +18,7 @@ export CDK_PARAM_TENANT_NAME=$(echo $tenantName | tr -d '"')
 export TENANT_ADMIN_EMAIL=$(echo $email | tr -d '"')
 
 # Define variables
-STACK_NAME="saas-genai-workshop-bootstrap-template"
+STACK_NAME="saas-genai-workshop-common-resources"
 USER_POOL_OUTPUT_PARAM_NAME="TenantUserpoolId"
 APP_CLIENT_ID_OUTPUT_PARAM_NAME="UserPoolClientId"
 API_GATEWAY_URL_OUTPUT_PARAM_NAME="ApiGatewayUrl"
