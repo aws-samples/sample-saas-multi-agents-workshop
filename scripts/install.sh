@@ -23,6 +23,11 @@ else
   fi
 fi
 
+# Get AWS account ID
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query "Account" --output text)
+echo "Using AWS Account ID: $AWS_ACCOUNT_ID"
+echo "Using AWS Region: $REGION"
+
 # Preprovision base infrastructure
 cd ../cdk
 npm install
@@ -32,6 +37,7 @@ if [[ "$STACK_OPERATION" == "create" || "$STACK_OPERATION" == "update" ]]; then
     
     # Bootstrap CDK if creating
     if [[ "$STACK_OPERATION" == "create" ]]; then
+        echo "Bootstrapping CDK with account $AWS_ACCOUNT_ID and region $REGION"
         npx cdk bootstrap
     fi
     

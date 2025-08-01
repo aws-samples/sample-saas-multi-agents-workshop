@@ -8,8 +8,7 @@
     "build": "tsc",
     "watch": "tsc -w",
     "test": "jest",
-    "cdk": "cdk",
-    "deploy:simplified": "cdk deploy --app \"npx ts-node --prefer-ts-exts bin/simplified-app.ts\""
+    "cdk": "cdk"
   },
   "devDependencies": {
     "@types/jest": "^29.5.11",

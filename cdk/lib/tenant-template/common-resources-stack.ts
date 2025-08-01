@@ -8,20 +8,20 @@ import { Bucket, ObjectOwnership } from "aws-cdk-lib/aws-s3";
 import { Role, ServicePrincipal, PolicyStatement, Effect } from "aws-cdk-lib/aws-iam";
 import { bedrock } from '@cdklabs/generative-ai-cdk-constructs';
 import * as _bedrock from 'aws-cdk-lib/aws-bedrock';
-import { CoreUtilsTemplateStack } from "../core-utils-template-stack";
+// import { CoreUtilsTemplateStack } from "../core-utils-template-stack";
 import { IdentityProvider } from "./identity-provider";
 
 
-interface MultiAgentsBootstrapTemplateStackProps extends StackProps {
-  readonly coreUtilsStack: CoreUtilsTemplateStack;
-  readonly controlPlaneApiGwUrl: string;
+interface CommonResourcesStackProps extends StackProps {
+  // readonly coreUtilsStack: CoreUtilsTemplateStack;
+  // readonly controlPlaneApiGwUrl: string;
 }
 
-export class MultiAgentsBootstrapTemplateStack extends Stack {
+export class CommonResourcesStack extends Stack {
   constructor(
     scope: Construct, 
     id: string, 
-    props: MultiAgentsBootstrapTemplateStackProps
+    props: CommonResourcesStackProps
   ) {
     super(scope, id, props);
 
@@ -47,11 +47,15 @@ export class MultiAgentsBootstrapTemplateStack extends Stack {
 
     // 2. Create DynamoDB tables for tenant data
     const tenantDataTable = new Table(this, 'TenantDataTable', {
+      tableName: "TenantDataTable",
       partitionKey: { name: 'tenantId', type: AttributeType.STRING },
       sortKey: { name: 'dataId', type: AttributeType.STRING },
-      billingMode: BillingMode.PAY_PER_REQUEST,
+      readCapacity: 5,
+      writeCapacity: 5,
       removalPolicy: RemovalPolicy.DESTROY,
     });
+
+   
 
     // Create DynamoDB table for technical support issues
     const technicalSupportIssuesTable = new Table(this, 'TechnicalSupportIssuesTable', {
@@ -104,11 +108,6 @@ export class MultiAgentsBootstrapTemplateStack extends Stack {
         resources: ["*"],
       })
     );
-
-
-    const coreUtilsStack = props.coreUtilsStack;
-    // Access the codeBuildProject instance from the coreUtilsStack
-    const codeBuildProject = coreUtilsStack.codeBuildProject;
 
     // Create OpenSearch Serverless collection and index
     const indexName =  "saas-workshop-pooled-index";
