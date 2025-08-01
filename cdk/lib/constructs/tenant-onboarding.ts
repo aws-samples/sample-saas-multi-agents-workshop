@@ -1,63 +1,58 @@
-import * as path from 'path';
-import { Arn, Duration, RemovalPolicy, Stack } from 'aws-cdk-lib';
+import * as cdk from 'aws-cdk-lib';
+import { Arn, RemovalPolicy, Stack } from 'aws-cdk-lib';
 import * as codebuild from 'aws-cdk-lib/aws-codebuild';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as aws_s3 from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
 import { SourceBucket } from './source-bucket';
 
 export interface TenantOnboardingProps {
   readonly onboardingProjectName: string;
   readonly deletionProjectName: string;
-  readonly assetDirectory?: string;
+  readonly assetDirectory: string;
+
+  readonly codebuildRole: iam.IRole;
+
+  readonly applicationServiceBuildProjectNames: string[];
+
+  readonly appSiteDistributionId: string;
+  readonly appSiteCloudFrontDomain: string;
+  readonly appSiteCustomDomain?: string;
+  readonly appSiteHostedZoneId?: string;
 }
 
-/**
- * Represents a tenant onboarding project.
- */
 export class TenantOnboarding extends Construct {
-  readonly onboardingProject: codebuild.Project;
-  readonly deletionProject: codebuild.Project;
-  readonly codebuildRole: iam.Role;
+  readonly repositoryUrl: string;
 
   constructor(scope: Construct, id: string, props: TenantOnboardingProps) {
     super(scope, id);
 
-    // Create a role for the CodeBuild projects
-    this.codebuildRole = new iam.Role(this, 'CodeBuildRole', {
-      assumedBy: new iam.ServicePrincipal('codebuild.amazonaws.com'),
+    this.addTenantOnboardingPermissions(props.codebuildRole, props);
+
+    const sourceBucket = new SourceBucket(this, `${id}SourceBucket`, {
+      name: 'TenantOnboarding',
+      assetDirectory: props.assetDirectory,
     });
 
-    // Add permissions to the role
-    this.addTenantOnboardingPermissions(this.codebuildRole);
+    const onboardingCfnParams: { [key: string]: string } = {
+      TenantId: '$TENANT_ID',
+      CompanyName: '"$COMPANY_NAME"',
+      TenantAdminEmail: '"$ADMIN_EMAIL"',
+      AppDistributionId: `"${props.appSiteDistributionId}"`,
+      DistributionDomain: `"${props.appSiteCloudFrontDomain}"`,
+      RoleArn: `"${props.codebuildRole.roleArn}"`,
+    };
 
-    // Create a source bucket for the onboarding scripts
-    const sourceBucket = new SourceBucket(this, 'SourceBucket', {
-      name: 'tenant-onboarding',
-      assetDirectory: props.assetDirectory || path.join(__dirname, '../../scripts'),
-    });
+    const cfnParamString = Object.entries(onboardingCfnParams)
+      .map((x) => `--parameters ${x[0]}=${x[1]}`)
+      .join(' ');
 
-    // Create the onboarding project
-    this.onboardingProject = new codebuild.Project(this, 'OnboardingProject', {
-      projectName: props.onboardingProjectName,
-      description: 'Project for onboarding tenants',
-      role: this.codebuildRole,
-      buildSpec: codebuild.BuildSpec.fromObject({
-        version: '0.2',
-        phases: {
-          install: {
-            commands: ['yum install -y jq'],
-          },
-          build: {
-            commands: [
-              'chmod +x ./provisioning.sh',
-              './provisioning.sh'
-            ],
-          },
-        },
-      }),
+    const onboardingProject = new codebuild.Project(this, `TenantOnboardingProject`, {
+      projectName: `${props.onboardingProjectName}`,
+      source: sourceBucket.source,
+      role: props.codebuildRole,
       environment: {
-        buildImage: codebuild.LinuxBuildImage.AMAZON_LINUX_2_4,
-        privileged: true,
+        buildImage: codebuild.LinuxBuildImage.STANDARD_7_0,
       },
       environmentVariables: {
         TENANT_ID: {
@@ -79,32 +74,37 @@ export class TenantOnboarding extends Construct {
           value: Stack.of(this).region,
         },
       },
-      timeout: Duration.minutes(30),
-      source: sourceBucket.source,
-    });
-
-    // Create the deletion project
-    this.deletionProject = new codebuild.Project(this, 'DeletionProject', {
-      projectName: props.deletionProjectName,
-      description: 'Project for deleting tenants',
-      role: this.codebuildRole,
       buildSpec: codebuild.BuildSpec.fromObject({
         version: '0.2',
         phases: {
           install: {
-            commands: ['yum install -y jq'],
+            commands: ['npm i'],
+          },
+          pre_build: {
+            commands: [],
           },
           build: {
             commands: [
-              'chmod +x ./deprovisioning.sh',
-              './deprovisioning.sh'
+              'npm run cdk bootstrap',
+              `npm run cdk deploy TenantStack-$TENANT_ID -- --require-approval=never ${cfnParamString}`,
             ],
+          },
+          post_build: {
+            commands: props.applicationServiceBuildProjectNames.map(
+              (x) =>
+                `aws codebuild start-build --project-name ${x}TenantDeploy --environment-variables-override name=TENANT_ID,value=\"$TENANT_ID\",type=PLAINTEXT`
+            ),
           },
         },
       }),
+    });
+
+    const tenantDeletionProject = new codebuild.Project(this, 'TenantDeletionProject', {
+      projectName: props.deletionProjectName,
+      role: props.codebuildRole,
+      source: sourceBucket.source,
       environment: {
-        buildImage: codebuild.LinuxBuildImage.AMAZON_LINUX_2_4,
-        privileged: true,
+        buildImage: codebuild.LinuxBuildImage.STANDARD_7_0,
       },
       environmentVariables: {
         TENANT_ID: {
@@ -117,54 +117,108 @@ export class TenantOnboarding extends Construct {
           value: Stack.of(this).region,
         },
       },
-      timeout: Duration.minutes(30),
-      source: sourceBucket.source,
+      buildSpec: codebuild.BuildSpec.fromObject({
+        version: '0.2',
+        phases: {
+          install: {
+            commands: ['npm i'],
+          },
+          pre_build: {
+            commands: [],
+          },
+          build: {
+            commands: [
+              'npm run cdk bootstrap',
+              `npm run cdk destroy TenantStack-$TENANT_ID -- --require-approval=never -f`,
+            ],
+          },
+          post_build: {
+            commands: [],
+          },
+        },
+      }),
     });
   }
 
-  private addTenantOnboardingPermissions(projectRole: iam.IRole) {
-    // Add permissions for CloudFormation and other services
+  private addTenantOnboardingPermissions(projectRole: iam.IRole, props: TenantOnboardingProps) {
+    // TODO: reduce the permission
+
     projectRole.addToPrincipalPolicy(
       new iam.PolicyStatement({
+        actions: ['route53:*'],
+        resources: [
+          `arn:${Stack.of(this).partition}:route53:::hostedzone/${props.appSiteHostedZoneId!}`,
+        ],
         effect: iam.Effect.ALLOW,
+      })
+    );
+    projectRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
         actions: [
-          'cloudformation:*',
+          'route53domains:*',
+          'cognito-identity:*',
           'cognito-idp:*',
-          's3:*',
-          'dynamodb:*',
+          'cognito-sync:*',
           'iam:*',
-          'lambda:*',
-          'apigateway:*',
-          'logs:*',
-          'bedrock:*',
-          'kms:*',
-          'ssm:GetParameter',
-        ],
-        resources: ['*'],
-      })
-    );
-
-    // Add permissions to start CodeBuild projects
-    projectRole.addToPrincipalPolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: [
+          's3:*',
+          'cloudformation:*',
           'codebuild:StartBuild',
-          'codebuild:BatchGetBuilds',
-          'codebuild:ListBuildsForProject',
         ],
         resources: ['*'],
+        effect: iam.Effect.ALLOW,
       })
     );
-
-    // Add permissions for DynamoDB tenant table
     projectRole.addToPrincipalPolicy(
       new iam.PolicyStatement({
+        actions: [
+          'cloudfront:AssociateAlias',
+          'cloudfront:GetDistribution',
+          'cloudfront:GetDistributionConfig',
+          'cloudfront:UpdateDistribution',
+        ],
+        resources: [
+          Arn.format(
+            {
+              service: 'cloudfront',
+              resource: 'distribution',
+              resourceName: props.appSiteDistributionId,
+            },
+            Stack.of(this)
+          ),
+        ],
         effect: iam.Effect.ALLOW,
+      })
+    );
+    projectRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
         actions: ['dynamodb:PutItem', 'dynamodb:DeleteItem'],
         resources: [
           Arn.format(
-            { service: 'dynamodb', resource: 'table', resourceName: 'TenantDataTable' },
+            { service: 'dynamodb', resource: 'table', resourceName: 'Tenant' },
+            Stack.of(this)
+          ),
+        ],
+        effect: iam.Effect.ALLOW,
+      })
+    );
+    projectRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        actions: ['dynamodb:CreateTable', 'dynamodb:DeleteTable'],
+        resources: [
+          Arn.format(
+            { service: 'dynamodb', resource: 'table', resourceName: 'Order-*' },
+            Stack.of(this)
+          ),
+        ],
+        effect: iam.Effect.ALLOW,
+      })
+    );
+    projectRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        actions: ['ssm:GetParameter'],
+        resources: [
+          Arn.format(
+            { service: 'ssm', resource: 'parameter', resourceName: 'cdk-bootstrap/*' },
             Stack.of(this)
           ),
         ],

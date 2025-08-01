@@ -1,96 +1,42 @@
 #!/bin/bash -e
 
-# Enable nocasematch option
-shopt -s nocasematch
+# Install/update the AWS CLI.
+# sudo yum remove awscli
 
-# Parse tenant details from the input message
-export CDK_PARAM_TENANT_ID=$(echo $tenantId | tr -d '"')
-export CDK_PARAM_TENANT_NAME=$(echo $tenantName | tr -d '"')
-export TENANT_ADMIN_EMAIL=$(echo $email | tr -d '"')
-export TIER=$(echo $tier | tr -d '"')
+# curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+# unzip awscliv2.zip
+# sudo ./aws/install
 
-echo "Provisioning tenant: $CDK_PARAM_TENANT_ID"
-echo "Tenant name: $CDK_PARAM_TENANT_NAME"
-echo "Admin email: $TENANT_ADMIN_EMAIL"
-echo "Tier: $TIER"
+aws codebuild start-build --project-name TenantOnboardingProject --environment-variables-override \
+name=TENANT_ID,value=$tenantId,type=PLAINTEXT \
+name=PLAN,value=$tier,type=PLAINTEXT \
+name=COMPANY_NAME,value=$tenantName,type=PLAINTEXT \
+name=ADMIN_EMAIL,value=$email,type=PLAINTEXT
 
-# Define variables
-STACK_NAME="TenantStack-$CDK_PARAM_TENANT_ID"
-COMMON_RESOURCES_STACK="saas-genai-workshop-common-resources"
-USER_POOL_OUTPUT_PARAM_NAME="TenantUserpoolId"
-APP_CLIENT_ID_OUTPUT_PARAM_NAME="UserPoolClientId"
-API_GATEWAY_URL_OUTPUT_PARAM_NAME="ApiGatewayUrl"
-API_GATEWAY_USAGE_PLAN_ID_OUTPUT_PARAM_NAME="ApiGatewayUsagePlan"
-S3_PARAM_NAME="SaaSGenAIWorkshopS3Bucket"
-INGESTION_LAMBDA_ARN_PARAM_NAME="SaaSGenAIWorkshopTriggerIngestionLambdaArn"
-OSSC_ARN_PARAM_NAME="SaaSGenAIWorkshopOSSCollectionArn"
-TENANT_DATA_TABLE_PARAM_NAME="TenantDataTableName"
-INPUT_TOKENS="10000"
-OUTPUT_TOKENS="500"
+STACK_NAME="TenantStack-$tenantId"
 
-# Read tenant details from the cloudformation
-export REGION=$(aws configure get region)
-export SAAS_APP_USERPOOL_ID=$(aws cloudformation describe-stacks --stack-name $COMMON_RESOURCES_STACK --query "Stacks[0].Outputs[?OutputKey=='$USER_POOL_OUTPUT_PARAM_NAME'].OutputValue" --output text)
-export SAAS_APP_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name $COMMON_RESOURCES_STACK --query "Stacks[0].Outputs[?OutputKey=='$APP_CLIENT_ID_OUTPUT_PARAM_NAME'].OutputValue" --output text)
-export API_GATEWAY_URL=$(aws cloudformation describe-stacks --stack-name $COMMON_RESOURCES_STACK --query "Stacks[0].Outputs[?OutputKey=='$API_GATEWAY_URL_OUTPUT_PARAM_NAME'].OutputValue" --output text)
-export API_GATEWAY_USAGE_PLAN_ID=$(aws cloudformation describe-stacks --stack-name $COMMON_RESOURCES_STACK --query "Stacks[0].Outputs[?OutputKey=='$API_GATEWAY_USAGE_PLAN_ID_OUTPUT_PARAM_NAME'].OutputValue" --output text)
-export S3_BUCKET=$(aws cloudformation describe-stacks --stack-name $COMMON_RESOURCES_STACK --query "Stacks[0].Outputs[?OutputKey=='$S3_PARAM_NAME'].OutputValue" --output text)
-export TRIGGER_PIPELINE_INGESTION_LAMBDA_ARN=$(aws cloudformation describe-stacks --stack-name $COMMON_RESOURCES_STACK --query "Stacks[0].Outputs[?OutputKey=='$INGESTION_LAMBDA_ARN_PARAM_NAME'].OutputValue" --output text)
-export OPENSEARCH_SERVERLESS_COLLECTION_ARN=$(aws cloudformation describe-stacks --stack-name $COMMON_RESOURCES_STACK --query "Stacks[0].Outputs[?OutputKey=='$OSSC_ARN_PARAM_NAME'].OutputValue" --output text)
-export TENANT_DATA_TABLE=$(aws cloudformation describe-stacks --stack-name $COMMON_RESOURCES_STACK --query "Stacks[0].Outputs[?OutputKey=='$TENANT_DATA_TABLE_PARAM_NAME'].OutputValue" --output text)
+echo Waiting
+aws cloudformation wait stack-exists --stack-name $STACK_NAME
+echo Waiting
+aws cloudformation wait stack-exists --stack-name $STACK_NAME
 
-# Create Tenant API Key
-generate_api_key() {
-    local suffix=${1:-sbt}
-    local uuid=$(python3 -c "import uuid; print(uuid.uuid4())")
-    echo "${uuid}-${suffix}"
-}
+aws cloudformation wait stack-create-complete --stack-name $STACK_NAME
+STACKS=$(aws cloudformation describe-stacks --stack-name $STACK_NAME)
+echo "Stacks: $STACKS"
+SAAS_TENANT_ID=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='TenantId'].OutputValue" --output text)
+echo "TenantId: $SAAS_TENANT_ID"
+SAAS_APP_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='ClientId'].OutputValue" --output text)
+echo "ClientId: $SAAS_APP_CLIENT_ID"
+SAAS_AUTH_SERVER=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='AuthServer'].OutputValue" --output text)
+echo "AuthServer: $SAAS_AUTH_SERVER"
+SAAS_REDIRECT_URL=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='RedirectUri'].OutputValue" --output text)
+echo "RedirectUri: $SAAS_REDIRECT_URL"
 
-TENANT_API_KEY=$(generate_api_key)
 
-# Error handling function
-check_error() {
-    provision_script_name=$1
-    exit_code=$2
-    provision_output=$3
-    if [[ "$exit_code" -ne 0 ]]; then
-        echo "$provision_output"
-        echo "ERROR: $provision_script_name failed. Exiting"
-        exit 1
-    fi
-        echo "$provision_script_name completed successfully"
-}
-
-# Change to the cdk directory
-cd /codebuild/output/src*/src/cdk
-
-# Invoke tenant provisioning service
-pip3 install -r lib/tenant-template/tenant-provisioning/requirements.txt
-provision_name="Tenant Provisioning"
-# Add tenant provisioning service
-export TENANT_NAME=$CDK_PARAM_TENANT_NAME
-export TENANT_DATA_TABLE=${TENANT_DATA_TABLE:-"TenantDataTable"}
-tenant_provision_output=$(python3 lib/tenant-template/tenant-provisioning/tenant_provisioning_service.py --tenantid $CDK_PARAM_TENANT_ID 2>&1 >/dev/null && exit_code=$?) || exit_code=$?
-check_error "$provision_name" $exit_code "$tenant_provision_output"
-
-export KNOWLEDGE_BASE_NAME=$CDK_PARAM_TENANT_ID
-
-# List all knowledge bases and filter the results based on the KnowledgeBase name
-export KNOWLEDGE_BASE_ID=$(aws bedrock-agent list-knowledge-bases | jq -r '.[] | .[] | select(.name == $name) | .knowledgeBaseId' --arg name $KNOWLEDGE_BASE_NAME)
-
-# Create tenant admin user
-provision_name="Tenant Admin User Provisioning"
-tenant_admin_output=$(python3 lib/tenant-template/user-management/user_management_service.py --tenant-id $CDK_PARAM_TENANT_ID --email $TENANT_ADMIN_EMAIL --user-role "TenantAdmin" 2>&1 >/dev/null && exit_code=$?) || exit_code=$?
-check_error "$provision_name" $exit_code  "$tenant_admin_output"
-
-# Create JSON response of output parameters
+#Export variables
 export tenantStatus="Complete"
-export tenantConfig=$(jq --arg SAAS_APP_USERPOOL_ID "$SAAS_APP_USERPOOL_ID" \
+export tenantConfig=$(jq --arg SAAS_TENANT_ID "$SAAS_TENANT_ID" \
   --arg SAAS_APP_CLIENT_ID "$SAAS_APP_CLIENT_ID" \
-  --arg API_GATEWAY_URL "$API_GATEWAY_URL" \
-  --arg TENANT_API_KEY "$TENANT_API_KEY" \
-  --arg CDK_PARAM_TENANT_NAME "$CDK_PARAM_TENANT_NAME" \
-  --arg KNOWLEDGE_BASE_ID "$KNOWLEDGE_BASE_ID" \
-  --arg INPUT_TOKENS "$INPUT_TOKENS" \
-  --arg OUTPUT_TOKENS "$OUTPUT_TOKENS" \
-  -n '{"tenantName":$CDK_PARAM_TENANT_NAME,"userPoolId":$SAAS_APP_USERPOOL_ID,"appClientId":$SAAS_APP_CLIENT_ID,"apiGatewayUrl":$API_GATEWAY_URL,"apiKey":$TENANT_API_KEY, "knowledgeBaseId":$KNOWLEDGE_BASE_ID, "inputTokens":$INPUT_TOKENS, "outputTokens":$OUTPUT_TOKENS}')
+  --arg SAAS_AUTH_SERVER "$SAAS_AUTH_SERVER" \
+  --arg SAAS_REDIRECT_URL "$SAAS_REDIRECT_URL" \
+  -n '{"tenantId":$SAAS_TENANT_ID,"appClientId":$SAAS_APP_CLIENT_ID,"authServer":$SAAS_AUTH_SERVER,"redirectUrl":$SAAS_REDIRECT_URL}')
