@@ -33,7 +33,8 @@ export class ControlPlaneStack extends Stack {
 
     // Create tenant onboarding project
     const tenantOnboarding = new TenantOnboarding(this, 'TenantOnboarding', {
-      projectName: 'TenantOnboardingProject',
+      onboardingProjectName: 'TenantOnboardingProject',
+      deletionProjectName: 'TenantOnboardingProjectDeletion',
     });
     
     this.tenantOnboardingProjectName = tenantOnboarding.onboardingProject.projectName;
