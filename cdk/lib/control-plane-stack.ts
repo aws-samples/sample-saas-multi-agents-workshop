@@ -1,6 +1,7 @@
 import { Stack, StackProps } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import { ControlPlane, CognitoAuth } from '@cdklabs/sbt-aws';
+import { TenantOnboarding } from './constructs/tenant-onboarding';
 
 export interface ControlPlaneStackProps extends StackProps {
   readonly systemAdminEmail: string;
@@ -12,6 +13,7 @@ export class ControlPlaneStack extends Stack {
   clientId: string;
   authorizationServer: string;
   wellKnownEndpointUrl: string;
+  tenantOnboardingProjectName: string;
   constructor(scope: Construct, id: string, props: ControlPlaneStackProps) {
     super(scope, id, props);
 
@@ -28,6 +30,13 @@ export class ControlPlaneStack extends Stack {
       auth: cognitoAuth,
       
     });
+
+    // Create tenant onboarding project
+    const tenantOnboarding = new TenantOnboarding(this, 'TenantOnboarding', {
+      projectName: 'TenantOnboardingProject',
+    });
+    
+    this.tenantOnboardingProjectName = tenantOnboarding.onboardingProject.projectName;
 
     this.controlPlaneUrl = controlPlane.controlPlaneAPIGatewayUrl;
     this.eventBusArn = controlPlane.eventManager.busArn;
