@@ -8,7 +8,7 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { Cognito } from './cognito';
 
-const TENANT_TABLE = 'Tenant';
+const TENANT_TABLE = 'TenantDataTable';
 
 export interface TenantOnboardingStackProps extends StackProps {
   readonly plan: string;
@@ -121,69 +121,56 @@ export class TenantOnboardingStack extends Stack {
     })
 
     // create tenant entry in dynamodb
-    const tableArn = Arn.format(
-      {
-        service: 'dynamodb',
-        resource: 'table',
-        resourceName: TENANT_TABLE,
-      },
-      this
-    );
+    // const tableArn = Arn.format(
+    //   {
+    //     service: 'dynamodb',
+    //     resource: 'table',
+    //     resourceName: TENANT_TABLE,
+    //   },
+    //   this
+    // );
 
     // TODO: make sure silent referesh works with or without custom domain
-    const tenantEntry = new cr.AwsCustomResource(this, 'TenantEntryResource', {
-      onCreate: {
-        service: 'DynamoDB',
-        action: 'putItem',
-        parameters: {
-          TableName: TENANT_TABLE,
-          Item: {
-            TENANT_ID: { S: props.tenantid },
-            COMPANY_NAME: { S: companyName.valueAsString },
-            TENANT_EMAIL: { S: tenantAdminEmail.valueAsString },
-            PLAN: { S: props.plan },
-            AUTH_SERVER: { S: cognito.authServerUrl },
-            AUTH_CLIENT_ID: { S: cognito.appClientId },
-            AUTH_REDIRECT_URI: { S: getNamedUrlForCognito() },
-            COGNITO_DOMAIN: {
-              S: `https://${cognito.appClientId}.auth.${this.region}.amazoncognito.com`,
-            },
-            AUTH_USE_SR: { BOOL: true },
-            AUTH_SR_REDIRECT_URI: { S: getNamedUrlForCognito('silentrefresh') },
-            AUTH_SR_TIMEOUT: { N: '5000' },
-            AUTH_TIMEOUT_FACTOR: { N: '0.25' },
-            AUTH_SESSION_CHECKS_ENABLED: { BOOL: true },
-            AUTH_SHOW_DEBUG_INFO: { BOOL: true },
-            AUTH_CLEAR_HASH_AFTER_LOGIN: { BOOL: false },
-          },
-        },
-        physicalResourceId: cr.PhysicalResourceId.of(`TenantEntry-${props.tenantid}`),
-      },
-      onDelete: {
-        service: 'DynamoDB',
-        action: 'deleteItem',
-        parameters: {
-          TableName: TENANT_TABLE,
-          Key: {
-            TENANT_ID: { S: props.tenantid },
-          },
-        },
-      },
-      policy: cr.AwsCustomResourcePolicy.fromSdkCalls({ resources: [tableArn] }),
-    });
+    // const tenantEntry = new cr.AwsCustomResource(this, 'TenantEntryResource', {
+    //   onCreate: {
+    //     service: 'DynamoDB',
+    //     action: 'putItem',
+    //     parameters: {
+    //       TableName: TENANT_TABLE,
+    //       Item: {
+    //         TENANT_ID: { S: props.tenantid },
+    //         COMPANY_NAME: { S: companyName.valueAsString },
+    //         TENANT_EMAIL: { S: tenantAdminEmail.valueAsString },
+    //         PLAN: { S: props.plan },
+    //         AUTH_SERVER: { S: cognito.authServerUrl },
+    //         AUTH_CLIENT_ID: { S: cognito.appClientId },
+    //         AUTH_REDIRECT_URI: { S: getNamedUrlForCognito() },
+    //         COGNITO_DOMAIN: {
+    //           S: `https://${cognito.appClientId}.auth.${this.region}.amazoncognito.com`,
+    //         },
+    //         AUTH_USE_SR: { BOOL: true },
+    //         AUTH_SR_REDIRECT_URI: { S: getNamedUrlForCognito('silentrefresh') },
+    //         AUTH_SR_TIMEOUT: { N: '5000' },
+    //         AUTH_TIMEOUT_FACTOR: { N: '0.25' },
+    //         AUTH_SESSION_CHECKS_ENABLED: { BOOL: true },
+    //         AUTH_SHOW_DEBUG_INFO: { BOOL: true },
+    //         AUTH_CLEAR_HASH_AFTER_LOGIN: { BOOL: false },
+    //       },
+    //     },
+    //     physicalResourceId: cr.PhysicalResourceId.of(`TenantEntry-${props.tenantid}`),
+    //   },
+    //   onDelete: {
+    //     service: 'DynamoDB',
+    //     action: 'deleteItem',
+    //     parameters: {
+    //       TableName: TENANT_TABLE,
+    //       Key: {
+    //         TENANT_ID: { S: props.tenantid },
+    //       },
+    //     },
+    //   },
+    //   policy: cr.AwsCustomResourcePolicy.fromSdkCalls({ resources: [tableArn] }),
+    // });
 
-    // create order table
-    const orderTable = new dynamodb.Table(this, 'OrderTable', {
-      tableName: `Order-${props.tenantid}`,
-      partitionKey: {
-        name: 'OrderId',
-        type: dynamodb.AttributeType.STRING,
-      },
-      readCapacity: 5,
-      writeCapacity: 5,
-      removalPolicy: RemovalPolicy.DESTROY,
-    });
-
-    // No EKS-specific resources
   }
 }
