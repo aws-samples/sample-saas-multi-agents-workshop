@@ -36,7 +36,7 @@ export interface ServicesProps {
   readonly appClientID: string;
   readonly userPoolID: string;
   readonly s3Bucket: Bucket;
-  readonly tenantTokenUsageTable: TableV2;
+  readonly tenantTokenUsageTable?: TableV2; // Made optional
   readonly restApi: RestApi;
   readonly controlPlaneApiGwUrl: string;
   readonly lambdaPowerToolsLayer: ILayerVersion;
@@ -89,7 +89,8 @@ export class Services extends Construct {
       })
     );
 
-    const tenantTokenUsageTableAccessRole = new Role(
+    // Create role only if tenantTokenUsageTable is provided
+    const tenantTokenUsageTableAccessRole = props.tenantTokenUsageTable ? new Role(
       this,
       "TenantTokenUsageTableAccessRole",
       {
@@ -111,20 +112,23 @@ export class Services extends Construct {
           }),
         },
       }
-    );
+    ) : undefined;
 
-    tenantTokenUsageTableAccessRole.assumeRolePolicy?.addStatements(
-      new PolicyStatement({
-        actions: ["sts:AssumeRole", "sts:TagSession"],
-        effect: Effect.ALLOW,
-        principals: [new ArnPrincipal(authorizerLambdaExecRole.roleArn)],
-        conditions: {
-          StringLike: {
-            "aws:RequestTag/TenantId": "*",
+    // Only add statements if the role exists
+    if (tenantTokenUsageTableAccessRole) {
+      tenantTokenUsageTableAccessRole.assumeRolePolicy?.addStatements(
+        new PolicyStatement({
+          actions: ["sts:AssumeRole", "sts:TagSession"],
+          effect: Effect.ALLOW,
+          principals: [new ArnPrincipal(authorizerLambdaExecRole.roleArn)],
+          conditions: {
+            StringLike: {
+              "aws:RequestTag/TenantId": "*",
+            },
           },
-        },
-      })
-    );
+        })
+      );
+    }
 
     // *********************
     //  Combined ABAC Role
@@ -225,9 +229,10 @@ export class Services extends Construct {
           USER_POOL_ID: props.userPoolID,
           ASSUME_ROLE_ARN: abacExecRole.roleArn,
           CP_API_GW_URL: props.controlPlaneApiGwUrl,
-          TENANT_TOKEN_USAGE_DYNAMODB_TABLE:
-            props.tenantTokenUsageTable.tableName,
-          TENANT_TOKEN_USAGE_ROLE_ARN: tenantTokenUsageTableAccessRole.roleArn,
+          ...(props.tenantTokenUsageTable && {
+            TENANT_TOKEN_USAGE_DYNAMODB_TABLE: props.tenantTokenUsageTable.tableName,
+            TENANT_TOKEN_USAGE_ROLE_ARN: tenantTokenUsageTableAccessRole?.roleArn || '',
+          }),
         },
       }
     );

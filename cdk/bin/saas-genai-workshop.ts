@@ -21,6 +21,7 @@ const controlPlaneStack = new ControlPlaneStack(app, "ControlPlaneStack", {
   // systemAdminRoleName: process.env.CDK_PARAM_SYSTEM_ADMIN_ROLE_NAME,
   systemAdminEmail: saasAdminEmail,
   env, // Add the same environment as AppPlaneStack
+  crossRegionReferences: true, // Enable cross-region references
 });
 
 new AppPlaneStack(app, 'ApplicationPlane', {
@@ -29,7 +30,9 @@ new AppPlaneStack(app, 'ApplicationPlane', {
 });
 
 const commonResource = new CommonResourcesStack(app, 'saas-genai-workshop-common-resources', {
-  env,
+  env, // Use the same environment as ControlPlaneStack
+  crossRegionReferences: true, // Enable cross-region references
+  controlPlaneApiGwUrl: controlPlaneStack.controlPlaneUrl,
 });
 
 // Create the ServicesStack

@@ -4,6 +4,7 @@ import { ControlPlane, CognitoAuth } from '@cdklabs/sbt-aws';
 
 export interface ControlPlaneStackProps extends StackProps {
   readonly systemAdminEmail: string;
+  readonly crossRegionReferences?: boolean;
 }
 
 export class ControlPlaneStack extends Stack {
@@ -28,6 +29,7 @@ export class ControlPlaneStack extends Stack {
       auth: cognitoAuth,
     });
 
+    
     this.controlPlaneUrl = controlPlane.controlPlaneAPIGatewayUrl;
     this.eventBusArn = controlPlane.eventManager.busArn;
     this.clientId = cognitoAuth.userClientId;

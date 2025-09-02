@@ -1,20 +1,29 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: MIT-0
 
-import { RemovalPolicy, Stack, StackProps, CfnOutput, CfnResource } from "aws-cdk-lib";
+import { RemovalPolicy, Stack, StackProps, CfnOutput, CfnResource, Duration } from "aws-cdk-lib";
 import { Construct } from "constructs";
 import { AttributeType, BillingMode, Table } from 'aws-cdk-lib/aws-dynamodb';
 import { Bucket, ObjectOwnership } from "aws-cdk-lib/aws-s3";
 import { Role, ServicePrincipal, PolicyStatement, Effect } from "aws-cdk-lib/aws-iam";
-import { bedrock } from '@cdklabs/generative-ai-cdk-constructs';
-import * as _bedrock from 'aws-cdk-lib/aws-bedrock';
+// import { bedrock } from '@cdklabs/generative-ai-cdk-constructs';
+import { ApiGateway } from "./api-gateway";
+import { Services } from "./services";
+import * as bedrock from 'aws-cdk-lib/aws-bedrock';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as python from '@aws-cdk/aws-lambda-python-alpha';
+import * as path from 'path';
 // import { CoreUtilsTemplateStack } from "../core-utils-template-stack";
 import { IdentityProvider } from "./identity-provider";
+import { TenantTokenUsage } from "./tenant-token-usage";
+import { S3VectorBucketResource } from './s3-vector-bucket-resource';
+import { BedrockKnowledgeBaseResource } from './bedrock-knowledge-base-resource';
 
 
 interface CommonResourcesStackProps extends StackProps {
   // readonly coreUtilsStack: CoreUtilsTemplateStack;
-  // readonly controlPlaneApiGwUrl: string;
+  readonly controlPlaneApiGwUrl: string;
+  readonly crossRegionReferences?: boolean;
 }
 
 export class CommonResourcesStack extends Stack {
@@ -32,15 +41,43 @@ export class CommonResourcesStack extends Stack {
       identityProvider.tenantUserPoolClient.userPoolClientId;
     const userPoolID = identityProvider.tenantUserPool.userPoolId;
 
+    // *****************
+    //  Layers
+    // *****************
+
+    // https://docs.powertools.aws.dev/lambda/python/2.31.0/#lambda-layer
+    const lambdaPowerToolsLayerARN = `arn:aws:lambda:${
+      Stack.of(this).region
+    }:017000801446:layer:AWSLambdaPowertoolsPythonV2:59`;
+
+    const lambdaPowerToolsLayer = lambda.LayerVersion.fromLayerVersionArn(
+      this,
+      "LambdaPowerTools",
+      lambdaPowerToolsLayerARN
+    );
+
     // 1. Create S3 buckets
     const dataBucket = new Bucket(this, "DataBucket", {
+      bucketName: `saas-ws-kb-data-${this.account}`,
       autoDeleteObjects: true,
       removalPolicy: RemovalPolicy.DESTROY,
       // Enable metadata filtering for tenant isolation
       objectOwnership: ObjectOwnership.BUCKET_OWNER_PREFERRED,
     });
 
+    // Create S3 Vector bucket
+    const vectorBucket = new S3VectorBucketResource(this, 'VectorBucket', {
+      bucketName: `saas-ws-kb-vectors-${this.account}`,
+      sseType: 'AES256',
+      indexName: `kb-embeddings-index-${this.account}`,
+      dimension: 1024,
+      distanceMetric: 'cosine',
+      dataType: 'float32',
+      lambdaLayer: lambdaPowerToolsLayer,
+    });
+
     const logsBucket = new Bucket(this, "LogsBucket", {
+      bucketName: `saas-ws-logs-bucket-${this.account}`,
       autoDeleteObjects: true,
       removalPolicy: RemovalPolicy.DESTROY,
     });
@@ -69,6 +106,7 @@ export class CommonResourcesStack extends Stack {
     // 3. Create IAM role for Bedrock
     const bedrockRole = new Role(this, 'BedrockRole', {
       assumedBy: new ServicePrincipal('bedrock.amazonaws.com'),
+      description: 'Role for Bedrock to access resources',
     });
 
     bedrockRole.addToPolicy(
@@ -109,62 +147,106 @@ export class CommonResourcesStack extends Stack {
       })
     );
 
-    // Create OpenSearch Serverless collection and index
-    const indexName =  "saas-workshop-pooled-index";
-    const collectionName = "saas-workshop-vector-collection";
+    bedrockRole.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: [
+          's3vectors:QueryVectors',
+          's3vectors:GetVectors',
+          's3vectors:GetIndex',
+          's3vectors:ListIndices',
+          's3vectors:DescribeVectorBucket',
+          's3vectors:PutVectors',
+          's3vectors:DeleteVectors',
+        ],
+        resources: ['*'],
+      })
+    );
 
 
     // Create a pooled knowledge base for all tenants with metadata filtering
-    const knowledgeBase = new bedrock.VectorKnowledgeBase(this, 'KnowledgeBase', {
-      name: 'saas-workshop-pooled-knowledge-base',
-      embeddingsModel: bedrock.BedrockFoundationModel.TITAN_EMBED_TEXT_V2_1024,
-      instruction: 'Use this knowledge base to answer questions about tenant data. ' +
-                  'It contains knowledge base documents, resolution documents, SOPs, and meeting notes for all tenants. ' +
-                  'Always filter results by the tenant_id metadata field to ensure tenant isolation.',
-    });
+    // const knowledgeBase = new bedrock.VectorKnowledgeBase(this, 'KnowledgeBase', {
+    //   name: 'saas-workshop-pooled-knowledge-base',
+    //   embeddingsModel: bedrock.BedrockFoundationModel.TITAN_EMBED_TEXT_V2_1024,
+    //   instruction: 'Use this knowledge base to answer questions about tenant data. ' +
+    //               'It contains knowledge base documents, resolution documents, SOPs, and meeting notes for all tenants. ' +
+    //               'Always filter results by the tenant_id metadata field to ensure tenant isolation.',
+    // });
 
     // Create a data source for the pooled knowledge base
     // Note: We're implementing tenant isolation through metadata in the S3 objects
     // and through the lambda function that accesses the knowledge base
-    const dataSource = new bedrock.S3DataSource(this, 'S3DataSource', {
-      knowledgeBase: knowledgeBase,
-      dataSourceName: 'tenant-data-source',
-      bucket: dataBucket,
+
+
+
+    // Create Bedrock Knowledge Base
+    const knowledgeBase = new BedrockKnowledgeBaseResource(this, 'BedrockKnowledgeBase', {
+      knowledgeName: `${this.stackName.toLowerCase()}-saas-ws-data-kb`, 
+      description: 'Knowledge base for custom data source',
+      roleArn: bedrockRole.roleArn,
+      embeddingModelArn: `arn:aws:bedrock:${this.region}::foundation-model/amazon.titan-embed-text-v2:0`,
+      indexArn: `arn:aws:s3vectors:${this.region}:${this.account}:bucket/kb-vectors-${this.account}/index/kb-embeddings-index-${this.account}`,
+      lambdaLayer: lambdaPowerToolsLayer,
+    });
+
+    const knowledgeBaseId = knowledgeBase.knowledgeBaseId;
+    const knowledgeBaseArn = knowledgeBase.knowledgeBaseArn;
+
+    const dataSource = new bedrock.CfnDataSource(this, 'S3DataSource', {
+      knowledgeBaseId: knowledgeBaseId,
+      name: `${this.stackName.toLowerCase()}-kb-data-source`,
+      dataSourceConfiguration: {
+        type: 'S3',
+        s3Configuration: {
+            bucketArn: dataBucket.bucketArn
+          },
+      },
       // Note: In a production environment, we would use a more sophisticated
       // approach to filter by tenant_id metadata, but for this workshop
       // we'll implement the filtering in the lambda function
     });
+
+    knowledgeBase.node.addDependency(vectorBucket);
+    knowledgeBase.bedrockKb.node.addDependency(vectorBucket.s3VectorBucket);
+
+    dataSource.node.addDependency(knowledgeBase);
 
     const sourceCodeS3Bucket = new Bucket(this, "TenantSourceCodeBucket", {
       autoDeleteObjects: true,
       removalPolicy: RemovalPolicy.DESTROY,
     });
 
-    // Cost and Usage resources (Commented out for the moment)
-        // const curPrefix = "CostUsageReport";
-        // const curDatabaseName = "costexplorerdb";
-        // // *****************
-        // //  Layers
-        // // *****************
-    
-        // // https://docs.powertools.aws.dev/lambda/python/2.31.0/#lambda-layer
-        // const lambdaPowerToolsLayerARN = `arn:aws:lambda:${
-        //   Stack.of(this).region
-        // }:017000801446:layer:AWSLambdaPowertoolsPythonV2:59`;
-        // const lambdaPowerToolsLayer = lambda.LayerVersion.fromLayerVersionArn(
-        //   this,
-        //   "LambdaPowerTools",
-        //   lambdaPowerToolsLayerARN
-        // );
-    
-        // const utilsLayer = new python.PythonLayerVersion(this, "UtilsLayer", {
-        //   entry: path.join(__dirname, "services/layers/"),
-        //   compatibleRuntimes: [lambda.Runtime.PYTHON_3_12],
-        // });
+    // Cost and Usage resources
+    const curPrefix = "CostUsageReport";
+    const curDatabaseName = "costexplorerdb";
 
-        // const tenantTokenUsage = new TenantTokenUsage(this, "TenantTokenUsage", {
-        //   lambdaPowerToolsLayer: lambdaPowerToolsLayer,
-        // });
+
+    const utilsLayer = new python.PythonLayerVersion(this, "UtilsLayer", {
+      entry: path.join(__dirname, "services/layers/"),
+      compatibleRuntimes: [lambda.Runtime.PYTHON_3_12],
+      compatibleArchitectures: [lambda.Architecture.ARM_64],
+      bundling: {
+        platform: "linux/arm64",
+      },
+    });
+
+
+    const tenantTokenUsage = new TenantTokenUsage(this, "TenantTokenUsage", {
+      lambdaPowerToolsLayer: lambdaPowerToolsLayer,
+    });
+
+    const api = new ApiGateway(this, "SaaSGenAIWorkshopRestApi", {});
+
+    const services = new Services(this, "SaaSGenAIWorkshopServices", {
+      appClientID: app_client_id,
+      userPoolID: userPoolID,
+      s3Bucket: dataBucket,
+      tenantTokenUsageTable: tenantTokenUsage.tenantTokenUsageTable,
+      restApi: api.restApi,
+      controlPlaneApiGwUrl: props.controlPlaneApiGwUrl,
+      lambdaPowerToolsLayer: lambdaPowerToolsLayer,
+      utilsLayer: utilsLayer,
+    });
 
         // const curS3Bucket = new Bucket(this, "SaaSGenAICURWorkshopBucket", {
         //   autoDeleteObjects: true,
@@ -260,6 +342,14 @@ export class CommonResourcesStack extends Stack {
       description: "The name of the S3 bucket for logs"
     });
 
+    new CfnOutput(this, "TenantUserpoolId", {
+      value: identityProvider.tenantUserPool.userPoolId,
+    });
+
+    new CfnOutput(this, "UserPoolClientId", {
+      value: identityProvider.tenantUserPoolClient.userPoolClientId,
+    });
+
     new CfnOutput(this, "TenantDataTableName", {
       value: tenantDataTable.tableName,
       description: "The name of the DynamoDB table for tenant data"
@@ -283,15 +373,19 @@ export class CommonResourcesStack extends Stack {
       value: dataBucket.bucketName,
       description: "The name of the S3 bucket for tenant data"
     });
+
+    new CfnOutput(this, "ApiGatewayUrl", {
+      value: api.restApi.url,
+    });
+
+    new CfnOutput(this, "ApiGatewayUsagePlan", {
+      value: api.usagePlanBasicTier.usagePlanId,
+    });
     
     new CfnOutput(this, "SaaSGenAIWorkshopTriggerIngestionLambdaArn", {
       value: "dummy-value", // This will be replaced with actual Lambda ARN in a real implementation
       description: "The ARN of the Lambda function to trigger ingestion"
     });
     
-    new CfnOutput(this, "SaaSGenAIWorkshopOSSCollectionArn", {
-      value: "dummy-value", // This will be replaced with actual collection ARN in a real implementation
-      description: "The ARN of the OpenSearch Serverless collection"
-    });
   }
 }

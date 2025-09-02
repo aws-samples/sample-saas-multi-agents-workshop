@@ -52,10 +52,64 @@ echo "Tenant Data Table: $TENANT_DATA_TABLE"
 KNOWLEDGE_BASE_ID=$(aws cloudformation describe-stacks --stack-name $COMMON_RESOURCES_STACK --query "Stacks[0].Outputs[?OutputKey=='KnowledgeBaseId'].OutputValue" --output text)
 echo "Knowledge Base ID: $KNOWLEDGE_BASE_ID"
 
-# Generate and upload mock data for the tenant
-echo "Generating mock data for tenant $SAAS_TENANT_ID..."
-ls
-python3 scripts/generate_tenant_mock_data.py --tenant-id $SAAS_TENANT_ID --tenant-name "$tenantName" --bucket $DATA_BUCKET --table $TENANT_DATA_TABLE
+# Create tenant prefix folders in S3 buckets
+echo "Creating tenant prefix folders for tenant $SAAS_TENANT_ID..."
+
+# Set environment variables for tenant provisioning
+export DATA_BUCKET=$DATA_BUCKET
+export LOGS_BUCKET=$(aws cloudformation describe-stacks --stack-name $COMMON_RESOURCES_STACK --query "Stacks[0].Outputs[?OutputKey=='LogsBucketName'].OutputValue" --output text)
+echo "Logs Bucket: $LOGS_BUCKET"
+export TRIGGER_PIPELINE_INGESTION_LAMBDA_ARN=$TRIGGER_INGESTION_LAMBDA
+export OPENSEARCH_SERVERLESS_COLLECTION_ARN=$(aws cloudformation describe-stacks --stack-name $COMMON_RESOURCES_STACK --query "Stacks[0].Outputs[?OutputKey=='SaaSGenAIWorkshopOSSCollectionArn'].OutputValue" --output text || echo "dummy-value")
+export API_GATEWAY_USAGE_PLAN_ID=$(aws cloudformation describe-stacks --stack-name $COMMON_RESOURCES_STACK --query "Stacks[0].Outputs[?OutputKey=='ApiGatewayUsagePlan'].OutputValue" --output text || echo "dummy-value")
+export TENANT_API_KEY=$(python3 -c "import uuid; print(f'{uuid.uuid4()}-sbt')")
+
+# Call tenant provisioning service
+if [ -f "lib/tenant-template/tenant-provisioning/tenant_provisioning_service.py" ]; then
+  # Install required packages
+  if [ -f "lib/tenant-template/tenant-provisioning/requirements.txt" ]; then
+    pip3 install -r lib/tenant-template/tenant-provisioning/requirements.txt
+  fi
+  
+  echo "Calling tenant provisioning service for tenant $SAAS_TENANT_ID..."
+  tenant_provision_output=$(python3 lib/tenant-template/tenant-provisioning/tenant_provisioning_service.py --tenantid $SAAS_TENANT_ID 2>&1)
+  exit_code=$?
+  
+  if [ $exit_code -ne 0 ]; then
+    echo "ERROR: Tenant provisioning failed with exit code $exit_code"
+    echo "$tenant_provision_output"
+  else
+    echo "Tenant provisioning completed successfully"
+  fi
+else
+  echo "tenant_provisioning_service.py not found, skipping tenant provisioning"
+fi
+
+# Get the user pool ID from the common resources stack
+USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name $COMMON_RESOURCES_STACK --query "Stacks[0].Outputs[?OutputKey=='TenantUserpoolId'].OutputValue" --output text || echo "")
+
+# Create tenant admin user if user management service exists
+if [ -f "lib/tenant-template/user-management/user_management_service.py" ]; then
+  # Install required packages if there's a requirements file
+  if [ -f "lib/tenant-template/user-management/requirements.txt" ]; then
+    pip3 install -r lib/tenant-template/user-management/requirements.txt
+  fi
+  
+  echo "Creating tenant admin user for tenant $SAAS_TENANT_ID..."
+  export SAAS_APP_USERPOOL_ID=$USER_POOL_ID
+  
+  tenant_admin_output=$(python3 lib/tenant-template/user-management/user_management_service.py --tenant-id $SAAS_TENANT_ID --email $email --user-role "TenantAdmin" 2>&1)
+  exit_code=$?
+  
+  if [ $exit_code -ne 0 ]; then
+    echo "ERROR: Tenant admin user creation failed with exit code $exit_code"
+    echo "$tenant_admin_output"
+  else
+    echo "Tenant admin user created successfully"
+  fi
+else
+  echo "user_management_service.py not found, skipping tenant admin user creation"
+fi
 
 # Trigger knowledge base ingestion
 echo "Triggering knowledge base ingestion for tenant $SAAS_TENANT_ID..."
@@ -75,4 +129,5 @@ export tenantConfig=$(jq --arg SAAS_TENANT_ID "$SAAS_TENANT_ID" \
   --arg SAAS_APP_CLIENT_ID "$SAAS_APP_CLIENT_ID" \
   --arg SAAS_AUTH_SERVER "$SAAS_AUTH_SERVER" \
   --arg SAAS_REDIRECT_URL "$SAAS_REDIRECT_URL" \
-  -n '{"tenantId":$SAAS_TENANT_ID,"appClientId":$SAAS_APP_CLIENT_ID,"authServer":$SAAS_AUTH_SERVER,"redirectUrl":$SAAS_REDIRECT_URL}')
+  --arg USER_POOL_ID "$USER_POOL_ID" \
+  -n '{"tenantId":$SAAS_TENANT_ID,"appClientId":$SAAS_APP_CLIENT_ID,"authServer":$SAAS_AUTH_SERVER,"redirectUrl":$SAAS_REDIRECT_URL,"userPoolId":$USER_POOL_ID}')

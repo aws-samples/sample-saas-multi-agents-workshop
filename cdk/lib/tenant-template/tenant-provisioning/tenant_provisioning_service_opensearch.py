@@ -5,6 +5,7 @@ import boto3
 import json
 import argparse
 import time
+from opensearchpy import OpenSearch, RequestsHttpConnection, AWSV4SignerAuth
 import os
 import logging
 import uuid
@@ -13,15 +14,16 @@ import sys
 
 # HOST=os.environ['OPENSEARCH_SERVERLESS_ENDPOINT']
 REGION=os.environ['AWS_REGION']
-DATA_BUCKET=os.environ['DATA_BUCKET']
-LOGS_BUCKET=os.environ['LOGS_BUCKET']
+S3_BUCKET=os.environ['S3_BUCKET']
 TRIGGER_PIPELINE_INGESTION_LAMBDA_ARN=os.environ['TRIGGER_PIPELINE_INGESTION_LAMBDA_ARN']
+OPENSEARCH_SERVERLESS_COLLECTION_ARN=os.environ['OPENSEARCH_SERVERLESS_COLLECTION_ARN']
 TENANT_API_KEY=os.environ['TENANT_API_KEY']
 EMBEDDING_MODEL_ARN = f'arn:aws:bedrock:{REGION}::foundation-model/amazon.titan-embed-text-v1'
 TENANT_KB_METADATA_FIELD = 'tenant-knowledge-base-metadata'
 TENANT_KB_TEXT_FIELD = 'tenant-knowledge-base-text'
 TENANT_KB_VECTOR_FIELD = 'tenant-knowledge-base-vector'
 
+aoss_client = boto3.client('opensearchserverless')
 s3 = boto3.client('s3')
 bedrock_agent_client = boto3.client('bedrock-agent')
 iam_client = boto3.client('iam')
@@ -30,12 +32,22 @@ lambda_client = boto3.client('lambda')
 
 def provision_tenant_resources(tenant_id):
 
+    kb_collection = __get_opensearch_serverless_collection_details()
+    kb_collection_name = kb_collection['name']
+    kb_collection_endpoint = kb_collection['collectionEndpoint']
+    kb_collection_endpoint_domain=kb_collection_endpoint.split("//")[-1]
     rule_name=f's3rule-{tenant_id}'
 
     try:
         # Create S3 tenant prefix and EventBridge rule
         rule_name = __create_s3_tenant_prefix(tenant_id, rule_name)
-    
+        
+        # Create OpenSearch serverless tenant index
+        __create_opensearch_serverless_tenant_index(tenant_id, kb_collection_endpoint_domain)
+        
+        # Generate and upload mock tenant data
+        tenant_name = os.environ.get('TENANT_NAME', tenant_id)
+        __generate_tenant_mock_data(tenant_id, tenant_name)
         
         # Add API key for tenant
         __api_gw_add_api_key(tenant_id)
@@ -68,6 +80,19 @@ def __api_gw_add_api_key(tenant_id):
         logging.error('Error occured while adding api key to api gateway usage plan', e)
         return 1
     
+def __get_opensearch_serverless_collection_details():
+    try:
+        kb_collection_id = OPENSEARCH_SERVERLESS_COLLECTION_ARN.split('/')[-1]
+        kb_collection = aoss_client.batch_get_collection(
+            ids=[kb_collection_id]
+        )
+        
+        logging.info(f'OpenSearch serverless collection details: {kb_collection}')
+        return kb_collection['collectionDetails'][0]
+    except Exception as e:
+        logging.error('Error occured while getting OpenSearch serverless collection details', e)
+        raise Exception('Error occured while getting OpenSearch serverless collection details') from e
+    
 # Note: We're removing the __create_tenant_knowledge_base function since we're using a pooled knowledge base
 # The data will be automatically ingested through the S3 event notifications set up in the CDK stack
 
@@ -95,34 +120,46 @@ def __create_tenant_kb_role(tenant_id):
         logging.error('Error occured while creating tenant knowledge base role', e)
         raise Exception('Error occured while creating tenant knowledge base role') from e
     
+# Function creating a Data Access Policy per tenant
+def __add_data_access_policy(tenant_id, tenant_kb_role_arn, kb_collection_name):
+
+    # Trimming tenant id to accomodate the polic name 32 characters limit
+    # Shortening tenant id to 25 characters to fit the policy name
+    trimmed_tenant_id = tenant_id[:25]
+
+    try:
+
+        response=aoss_client.create_access_policy(
+            name=f'policy-{trimmed_tenant_id}',
+            description=f'Data Access Policy for tenant {tenant_id}',
+            policy=json.dumps(__generate_data_access_policy(tenant_id, tenant_kb_role_arn, kb_collection_name)),
+            type='data')
+
+        logging.info(f'Tenant data access policy created: {response}')
+        
+    except Exception as e: 
+        logging.error('Error occured while adding data access policy', e)
+        raise Exception('Error occured while adding data access policy') from e    
+
 def __create_s3_tenant_prefix(tenant_id, rule_name):
     try:
-        # Create data prefix
-        data_prefix = ''.join([tenant_id, '/'])
-        s3.put_object(Bucket=DATA_BUCKET, Key=data_prefix)
-        logging.info(f'S3 data prefix created for tenant {tenant_id}')
-        
-        # Create logs prefix
-        logs_prefix = ''.join([tenant_id, '/'])
-        s3.put_object(Bucket=LOGS_BUCKET, Key=logs_prefix)
-        logging.info(f'S3 logs prefix created for tenant {tenant_id}')
-        
-        # Create EventBridge rule for the tenant prefix
-        rule_arn=__create_eventbridge_tenant_rule(data_prefix, tenant_id, rule_name)
+        prefix = ''.join([tenant_id, '/'])
+        s3.put_object(Bucket=S3_BUCKET, Key=prefix)
+        rule_arn=__create_eventbridge_tenant_rule(prefix, tenant_id, rule_name)
         __create_trigger_lambda_eventbridge_permissions(rule_arn)
-        
+        logging.info(f'S3 tenant prefix created for tenant {tenant_id}')
         return rule_name
     
     except Exception as e:
-        logging.error('Error occured while creating S3 tenant prefixes', e)
-        raise Exception('Error occured while creating S3 tenant prefixes') from e
+        logging.error('Error occured while creating S3 tenant prefix', e)
+        raise Exception('Error occured while creating S3 tenant prefix') from e     
     
 def __create_eventbridge_tenant_rule(prefix, tenant_id, rule_name):
     try:
         event_pattern = {
             "detail": {
                 "bucket": {
-                    "name": [DATA_BUCKET]
+                    "name": [S3_BUCKET]
                 },
                 "object": {
                     "key": [{
@@ -200,6 +237,69 @@ def __create_eventbridge_tenant_rule_target(tenant_id, kb_id, rule_name, datasou
         logging.error('Error occured while creating eventbridge rule', e)
         raise Exception('Error occured while creating eventbridge rule') from e 
         
+def __create_opensearch_serverless_tenant_index(tenantId, kb_collection_endpoint):
+    try:
+        # Get AWS credentials
+        credentials = boto3.Session().get_credentials()
+
+        # Create the AWS Signature Version 4 signer for OpenSearch Serverless
+        auth = AWSV4SignerAuth(credentials, REGION, 'aoss')
+
+        # Create the OpenSearch client
+        client = OpenSearch(
+            hosts=[{'host': kb_collection_endpoint, 'port': 443}],
+            http_auth=auth,
+            use_ssl=True,
+            verify_certs=True,
+            connection_class=RequestsHttpConnection,
+            pool_maxsize=20
+        )
+
+        index_body = {
+            "settings": {
+                "index.knn": True,
+                "number_of_shards": 1,
+                "knn.algo_param.ef_search": 512,
+                "number_of_replicas": 0,
+            },
+            "mappings": {
+                "properties": {}
+            }
+        }
+
+        index_body["mappings"]["properties"][TENANT_KB_VECTOR_FIELD] = {
+            "type": "knn_vector",
+            "dimension": 1536,
+            "method": {
+                "name": "hnsw",
+                "engine": "faiss"
+            },
+        }
+
+        index_body["mappings"]["properties"][TENANT_KB_TEXT_FIELD] = {
+            "type": "text"
+        }
+
+        index_body["mappings"]["properties"][TENANT_KB_METADATA_FIELD] = {
+            "type": "text"
+        }
+
+        # Create the index
+        try:
+            response = client.indices.create(index=tenantId, body=index_body)
+            logging.info(f'Tenant open search serverless index created: {response}')
+        except Exception as e:
+            if 'resource_already_exists_exception' in str(e).lower():
+                logging.info(f'Tenant open search serverless index {tenantId} already exists, skipping creation.')
+            else:
+                logging.error('Error occurred while creating opensearch serverless tenant index', e)
+                raise Exception('Error occurred while creating opensearch serverless tenant index') from e
+    except Exception as e:
+        logging.error('Error occured while creating opensearch serverless tenant prefix', e)
+        raise Exception('Error occured while creating opensearch serverless tenant prefix') from e   
+    
+
+
 def __get_kb_trust_policy():
     return {
         "Version": "2012-10-17",
@@ -224,13 +324,18 @@ def __get_kb_policy(tenant_id):
                     EMBEDDING_MODEL_ARN
                 ]
             },
+            { #AOSS policy
+                "Effect": "Allow",
+                "Action": "aoss:APIAccessAll",
+                "Resource": [OPENSEARCH_SERVERLESS_COLLECTION_ARN]
+            },
             { # S3 policy
                 "Sid": "AllowKBAccessDocuments",
                 "Effect": "Allow",
                 "Action": [
                     "s3:GetObject"
                 ],
-                "Resource": [f"arn:aws:s3:::{DATA_BUCKET}/{tenant_id}/*"]
+                "Resource": [f"arn:aws:s3:::{S3_BUCKET}/{tenant_id}/*"]
             },
             {
                 "Sid": "AllowKBAccessBucket",
@@ -239,7 +344,7 @@ def __get_kb_policy(tenant_id):
                     "s3:ListBucket"
                 ],
                 "Resource": [
-                    f"arn:aws:s3:::{DATA_BUCKET}"
+                    f"arn:aws:s3:::{S3_BUCKET}"
                 ],
                 "Condition": {
                     "StringLike": {
@@ -251,6 +356,66 @@ def __get_kb_policy(tenant_id):
             }            
         ]
     }
+
+# Generating a Data Access Policy per tenant
+def __generate_data_access_policy(tenant_id, tenant_kb_role_arn, kb_collection_name):
+    return [
+        {
+            "Rules": [
+            {
+                "Resource": [
+                f"index/{kb_collection_name}/{tenant_id}"
+                ],
+                "Permission": [
+                    "aoss:CreateIndex",
+                    "aoss:DeleteIndex",
+                    "aoss:UpdateIndex",
+                    "aoss:DescribeIndex",
+                    "aoss:ReadDocument",
+                    "aoss:WriteDocument"
+                ],
+                "ResourceType": "index"
+            }
+            ],
+            "Principal": [tenant_kb_role_arn],
+        }
+    ]
+
+def __generate_tenant_mock_data(tenant_id, tenant_name):
+    """Generate and upload mock data for the tenant"""
+    try:
+        import subprocess
+        import sys
+        import os
+        
+        # Get the path to the generate_tenant_mock_data.py script
+        script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+                                  "scripts", "generate_tenant_mock_data.py")
+        
+        # Make the script executable
+        subprocess.run(["chmod", "+x", script_path], check=True)
+        
+        # Get the tenant data table name from CloudFormation outputs
+        tenant_data_table = os.environ.get('TENANT_DATA_TABLE', 'TenantDataTable')
+        
+        # Run the script to generate and upload mock data
+        result = subprocess.run([
+            sys.executable,
+            script_path,
+            "--tenant-id", tenant_id,
+            "--tenant-name", tenant_name,
+            "--bucket", S3_BUCKET,
+            "--table", tenant_data_table
+        ], capture_output=True, text=True, check=True)
+        
+        logging.info(f"Successfully generated mock data for tenant {tenant_id}: {result.stdout}")
+        return True
+    except Exception as e:
+        logging.error(f"Error generating mock data for tenant {tenant_id}: {e}")
+        logging.error(f"Script output: {getattr(e, 'output', 'No output')}")
+        # Don't fail the entire provisioning process if mock data generation fails
+        return False
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(

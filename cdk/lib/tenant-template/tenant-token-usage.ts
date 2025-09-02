@@ -81,6 +81,10 @@ export class TenantTokenUsage extends Construct {
         functionName: "TenantTokenUsageCalculatorService",
         entry: path.join(__dirname, "services/tenant-token-usage/"),
         runtime: lambda.Runtime.PYTHON_3_12,
+        architecture: lambda.Architecture.ARM_64,
+        bundling: {
+          platform: "linux/arm64",
+        },
         index: "tenant_token_usage_calculator.py",
         handler: "calculate_daily_tenant_token_usage",
         timeout: cdk.Duration.seconds(60),
