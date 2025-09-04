@@ -25,8 +25,8 @@ help() {
   echo "  get-all-users <limit> <next_token>"
   echo "  update-user <user_id> <user_role> <user_email>"
   echo "  delete-user <user_id>"
-  echo "  agent-resolution <tenant_id> <query>"
-  echo "  direct-resolution <tenant_id> <query>"
+  echo "  agent-resolution <user> <password> <query>"
+  echo "  direct-resolution <user> <password> <query>"
   echo "  help"
 }
 
@@ -471,101 +471,85 @@ delete_user() {
 }
 
 agent_resolution() {
-  source_config
-  TENANT_ID="$1"
-  QUERY="$2"
+  USER="$1"
+  PASSWORD="$2"
+  QUERY="$3"
 
   if $DEBUG; then
-    echo "Calling agent-resolution for tenant: $TENANT_ID with query: $QUERY"
+    echo "Calling agent-resolution with query: $QUERY"
   fi
 
-  # Get the API Gateway URL from the tenant stack
-  TENANT_STACK_NAME="${TENANT_ID}-tenant-stack"
-  API_GATEWAY_URL=$(aws cloudformation describe-stacks \
-    --stack-name "$TENANT_STACK_NAME" \
-    --query "Stacks[0].Outputs[?OutputKey=='ApiGatewayUrl'].OutputValue" \
-    --output text)
+  STACK_NAME="saas-genai-workshop-common-resources"
+  APP_CLIENT_ID_OUTPUT_PARAM_NAME="UserPoolClientId"
+  API_GATEWAY_URL_OUTPUT_PARAM_NAME="ApiGatewayUrl"
+  
+  export SAAS_APP_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='$APP_CLIENT_ID_OUTPUT_PARAM_NAME'].OutputValue" --output text)
+  export API_GATEWAY_URL=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='$API_GATEWAY_URL_OUTPUT_PARAM_NAME'].OutputValue" --output text)
 
-  if [ -z "$API_GATEWAY_URL" ]; then
-    echo "Error: Could not find API Gateway URL for tenant $TENANT_ID"
-    exit 1
+  AUTHENTICATION_RESULT=$(aws cognito-idp initiate-auth \
+    --auth-flow USER_PASSWORD_AUTH \
+    --client-id "${SAAS_APP_CLIENT_ID}" \
+    --auth-parameters "USERNAME='${USER}',PASSWORD='${PASSWORD}'" \
+    --query 'AuthenticationResult')
+
+  ACCESS_TOKEN=$(echo "$AUTHENTICATION_RESULT" | jq -r '.AccessToken')
+  ID_TOKEN=$(echo "$AUTHENTICATION_RESULT" | jq -r '.IdToken')
+
+  if $DEBUG; then
+    echo "API GATEWAY URL: $API_GATEWAY_URL"
   fi
 
-  # Get the API key for the tenant
-  API_KEY=$(aws apigateway get-api-keys \
-    --name-query "$TENANT_ID" \
-    --include-values \
-    --query "items[0].value" \
-    --output text)
+  echo "Sending request and waiting for response..."
 
-  if [ -z "$API_KEY" ]; then
-    echo "Error: Could not find API key for tenant $TENANT_ID"
-    exit 1
-  fi
-
-  # Call the agent-resolution endpoint
   RESPONSE=$(curl --request POST \
     --url "${API_GATEWAY_URL}agent-resolution" \
-    --header "Authorization: Bearer ${ACCESS_TOKEN}" \
-    --header "x-api-key: ${API_KEY}" \
+    --header "Authorization: Bearer ${ID_TOKEN}" \
     --header 'content-type: application/json' \
     --data "$QUERY" \
     --silent)
 
-  if $DEBUG; then
-    echo "Response: $RESPONSE"
-  else
-    echo "$RESPONSE"
-  fi
+  echo -e "$RESPONSE" | tr '\n' '\n'
 }
 
 direct_resolution() {
-  source_config
-  TENANT_ID="$1"
-  QUERY="$2"
+  USER="$1"
+  PASSWORD="$2"
+  QUERY="$3"
 
   if $DEBUG; then
-    echo "Calling direct-resolution for tenant: $TENANT_ID with query: $QUERY"
+    echo "Calling direct-resolution with query: $QUERY"
   fi
 
-  # Get the API Gateway URL from the tenant stack
-  TENANT_STACK_NAME="${TENANT_ID}-tenant-stack"
-  API_GATEWAY_URL=$(aws cloudformation describe-stacks \
-    --stack-name "$TENANT_STACK_NAME" \
-    --query "Stacks[0].Outputs[?OutputKey=='ApiGatewayUrl'].OutputValue" \
-    --output text)
+  STACK_NAME="saas-genai-workshop-common-resources"
+  APP_CLIENT_ID_OUTPUT_PARAM_NAME="UserPoolClientId"
+  API_GATEWAY_URL_OUTPUT_PARAM_NAME="ApiGatewayUrl"
 
-  if [ -z "$API_GATEWAY_URL" ]; then
-    echo "Error: Could not find API Gateway URL for tenant $TENANT_ID"
-    exit 1
+  export SAAS_APP_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='$APP_CLIENT_ID_OUTPUT_PARAM_NAME'].OutputValue" --output text)
+  export API_GATEWAY_URL=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='$API_GATEWAY_URL_OUTPUT_PARAM_NAME'].OutputValue" --output text)
+
+  AUTHENTICATION_RESULT=$(aws cognito-idp initiate-auth \
+    --auth-flow USER_PASSWORD_AUTH \
+    --client-id "${SAAS_APP_CLIENT_ID}" \
+    --auth-parameters "USERNAME='${USER}',PASSWORD='${PASSWORD}'" \
+    --query 'AuthenticationResult')
+
+  ACCESS_TOKEN=$(echo "$AUTHENTICATION_RESULT" | jq -r '.AccessToken')
+  ID_TOKEN=$(echo "$AUTHENTICATION_RESULT" | jq -r '.IdToken')
+
+  if $DEBUG; then
+    echo "API GATEWAY URL: $API_GATEWAY_URL"
   fi
 
-  # Get the API key for the tenant
-  API_KEY=$(aws apigateway get-api-keys \
-    --name-query "$TENANT_ID" \
-    --include-values \
-    --query "items[0].value" \
-    --output text)
+  echo "Sending request and waiting for response..."
 
-  if [ -z "$API_KEY" ]; then
-    echo "Error: Could not find API key for tenant $TENANT_ID"
-    exit 1
-  fi
-
-  # Call the resolution endpoint
   RESPONSE=$(curl --request POST \
     --url "${API_GATEWAY_URL}resolution" \
-    --header "Authorization: Bearer ${ACCESS_TOKEN}" \
-    --header "x-api-key: ${API_KEY}" \
+    --header "Authorization: Bearer ${ID_TOKEN}" \
     --header 'content-type: application/json' \
     --data "$QUERY" \
     --silent)
 
-  if $DEBUG; then
-    echo "Response: $RESPONSE"
-  else
-    echo "$RESPONSE"
-  fi
+  echo -e "$RESPONSE" | tr '\n' '\n'
 }
 
 # Main
@@ -667,19 +651,19 @@ case "$1" in
   ;;
 
 "agent-resolution")
-  if [ $# -ne 3 ]; then
-    echo "Error: agent-resolution requires tenant_id and query"
+  if [ $# -ne 4 ]; then
+    echo "Error: agent-resolution requires user, password, and query"
     exit 1
   fi
-  agent_resolution "$2" "$3"
+  agent_resolution "$2" "$3" "$4"
   ;;
 
 "direct-resolution")
-  if [ $# -ne 3 ]; then
-    echo "Error: direct-resolution requires tenant_id and query"
+  if [ $# -ne 4 ]; then
+    echo "Error: direct-resolution requires user, password, and query"
     exit 1
   fi
-  direct_resolution "$2" "$3"
+  direct_resolution "$2" "$3" "$4"
   ;;
 
 "help")
