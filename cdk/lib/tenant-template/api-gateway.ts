@@ -25,11 +25,11 @@ export class ApiGateway extends Construct {
   constructor(scope: Construct, id: string, props: ApiGatewayProps) {
     super(scope, id);
 
-    const apiLogGroup = new LogGroup(this, "SaaSGenAIWorkshopAPILogGroup", {
+    const apiLogGroup = new LogGroup(this, "SaaSKnowledgeServiceAPILogGroup", {
       retention: RetentionDays.ONE_WEEK,
     });
 
-    const restApi = new RestApi(this, "SaaSGenAIWorkshopRestApi", {
+    const restApi = new RestApi(this, "SaaSKnowledgeServiceRestApi", {
       cloudWatchRole: true,
       apiKeySourceType: ApiKeySourceType.AUTHORIZER,
       defaultCorsPreflightOptions: {

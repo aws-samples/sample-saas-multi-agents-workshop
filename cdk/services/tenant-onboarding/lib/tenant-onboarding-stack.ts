@@ -1,20 +1,15 @@
-import { Arn, CfnOutput, CfnParameter, RemovalPolicy, Stack, StackProps } from 'aws-cdk-lib';
+import { CfnOutput, CfnParameter, Stack, StackProps } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
-import * as cr from 'aws-cdk-lib/custom-resources';
-import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
-import * as route53 from 'aws-cdk-lib/aws-route53';
-import * as alias from 'aws-cdk-lib/aws-route53-targets';
-import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
-import * as iam from 'aws-cdk-lib/aws-iam';
-import { Cognito } from './cognito';
+// Removed unused imports for cloudfront, route53, alias, dynamodb, iam, and Cognito
+// as these components are no longer used in this stack
 
+// This constant was used for DynamoDB table references in the commented code below
 const TENANT_TABLE = 'TenantDataTable';
 
 export interface TenantOnboardingStackProps extends StackProps {
   readonly plan: string;
   readonly tenantid: string;
-  readonly customDomain?: string;
-  readonly hostedZoneId?: string;
+  // Removed customDomain and hostedZoneId as they're no longer used
 }
 
 export class TenantOnboardingStack extends Stack {
@@ -25,100 +20,21 @@ export class TenantOnboardingStack extends Stack {
     const companyName = new CfnParameter(this, 'CompanyName', {});
     const tenantAdminEmail = new CfnParameter(this, 'TenantAdminEmail', {});
     const appDistributionId = new CfnParameter(this, 'AppDistributionId', {});
-    const distributionDomain = new CfnParameter(this, 'DistributionDomain', {});
     const roleArn = new CfnParameter(this, 'RoleArn', {});
 
-    const usingCustomDomain = props.customDomain && props.customDomain.length > 0;
-    if (usingCustomDomain && !props.hostedZoneId) {
-      throw new Error(
-        `Hosted Zone must be specified for the custom domain '${props.customDomain}'`
-      );
-    }
-
-    const appSiteBaseUrl = usingCustomDomain
-      ? `https://${props.tenantid}.${props.customDomain!}`
-      : `https://${distributionDomain.valueAsString}/#/${props.tenantid}`;
-
-    const getNamedUrlForCognito = (pathName?: string) => {
-      if (usingCustomDomain) {
-        if (pathName) {
-          return `${appSiteBaseUrl}/${pathName}`;
-        } else {
-          return appSiteBaseUrl;
-        }
-      }
-
-      const path = pathName ? `%26path=${pathName!}` : '';
-
-      return `https://${distributionDomain.valueAsString}/?tenantId=${props.tenantid}${path}`;
-    };
+    // Removed custom domain, distribution domain, and Cognito URL handling as they're no longer needed
 
     // No EKS cluster creation
 
-    // create app site distribution
-    if (usingCustomDomain) {
-      // add alias to existing distribution
-      const tenantAppDomain = `${props.tenantid}.${props.customDomain}`;
-
-      const hostedZone = route53.PublicHostedZone.fromHostedZoneAttributes(
-        this,
-        'PublicHostedZone',
-        {
-          hostedZoneId: props.hostedZoneId!,
-          zoneName: props.customDomain!,
-        }
-      );
-
-      const distribution = cloudfront.Distribution.fromDistributionAttributes(
-        this,
-        'CloudFrontDistribution',
-        {
-          distributionId: appDistributionId.valueAsString,
-          domainName: distributionDomain.valueAsString,
-        }
-      );
-
-      new route53.ARecord(this, `AliasRecord`, {
-        zone: hostedZone,
-        recordName: tenantAppDomain,
-        target: route53.RecordTarget.fromAlias(new alias.CloudFrontTarget(distribution)),
-      });
-    } else {
-      // no distribution. app-domain/tenant is the url.
-    }
-
-    // create cognito resources
-    const cognito = new Cognito(this, 'CognitoResources', {
-      adminUserEmailAddress: tenantAdminEmail.valueAsString,
-      userPoolName: `${props.tenantid}-UserPool`,
-      callbackUrl: getNamedUrlForCognito(),
-      signoutUrl: getNamedUrlForCognito('logoff'),
-      inviteEmailSubject: `Login for ${companyName.valueAsString}`,
-      inviteEmailBody: `Your username is {username} and temporary password is {####}. Please login here: ${appSiteBaseUrl}`,
-      customAttributes: {
-        'tenant-id': { value: props.tenantid, mutable: false },
-      },
-    });
-
+    // Note: The following components have been removed as they are no longer needed:
+    // - HostedZone, Distribution, and ARecord (for custom domains)
+    // - Cognito resources (authentication now handled by common stack)
+    
+    // Only keeping the tenant ID output as it's still used
     new CfnOutput(this, 'tenantId', {
       key: 'TenantId',
       value: tenantId.valueAsString,
     });
-
-    new CfnOutput(this, 'clientId', {
-      key: 'ClientId',
-      value: cognito.appClientId,
-    });
-
-    new CfnOutput(this, 'authServer', {
-      key: 'AuthServer',
-      value: cognito.authServerUrl,
-    });
-
-    new CfnOutput(this, 'redirectUri', {
-      key: 'RedirectUri',
-      value: getNamedUrlForCognito(),
-    })
 
     // create tenant entry in dynamodb
     // const tableArn = Arn.format(
@@ -130,7 +46,10 @@ export class TenantOnboardingStack extends Stack {
     //   this
     // );
 
-    // TODO: make sure silent referesh works with or without custom domain
+    // NOTE: The following commented code was previously used to create tenant entries in DynamoDB
+    // with Cognito authentication details. This is no longer needed as authentication is now
+    // handled by the common stack.
+    //
     // const tenantEntry = new cr.AwsCustomResource(this, 'TenantEntryResource', {
     //   onCreate: {
     //     service: 'DynamoDB',
@@ -142,19 +61,7 @@ export class TenantOnboardingStack extends Stack {
     //         COMPANY_NAME: { S: companyName.valueAsString },
     //         TENANT_EMAIL: { S: tenantAdminEmail.valueAsString },
     //         PLAN: { S: props.plan },
-    //         AUTH_SERVER: { S: cognito.authServerUrl },
-    //         AUTH_CLIENT_ID: { S: cognito.appClientId },
-    //         AUTH_REDIRECT_URI: { S: getNamedUrlForCognito() },
-    //         COGNITO_DOMAIN: {
-    //           S: `https://${cognito.appClientId}.auth.${this.region}.amazoncognito.com`,
-    //         },
-    //         AUTH_USE_SR: { BOOL: true },
-    //         AUTH_SR_REDIRECT_URI: { S: getNamedUrlForCognito('silentrefresh') },
-    //         AUTH_SR_TIMEOUT: { N: '5000' },
-    //         AUTH_TIMEOUT_FACTOR: { N: '0.25' },
-    //         AUTH_SESSION_CHECKS_ENABLED: { BOOL: true },
-    //         AUTH_SHOW_DEBUG_INFO: { BOOL: true },
-    //         AUTH_CLEAR_HASH_AFTER_LOGIN: { BOOL: false },
+    //         // Auth details now come from common stack instead of tenant-specific Cognito
     //       },
     //     },
     //     physicalResourceId: cr.PhysicalResourceId.of(`TenantEntry-${props.tenantid}`),

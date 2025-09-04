@@ -2,6 +2,10 @@
 !jest.config.js
 *.d.ts
 node_modules
+assets/
+zip_assets.sh
+README-resolution-endpoints.md
+docs/
 
 # CDK asset staging directory
 .cdk.staging

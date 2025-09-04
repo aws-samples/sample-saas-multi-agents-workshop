@@ -44,7 +44,7 @@ export interface ServicesProps {
 }
 
 export class Services extends Construct {
-  public readonly ragService: Function;
+  public readonly agentCoreService: Function;
   public readonly s3UploaderService: Function;
   public readonly triggerDataIngestionService: Function;
   public readonly getJWTTokenService: Function;
@@ -56,7 +56,8 @@ export class Services extends Construct {
     const region = Stack.of(this).region;
     const accountId = Stack.of(this).account;
 
-    const invoke = props.restApi.root.addResource("invoke");
+    const agentResolution = props.restApi.root.addResource("agent-resolution");
+    const resolution = props.restApi.root.addResource("resolution");
     const s3Upload = props.restApi.root.addResource("upload");
 
     // *****************
@@ -247,8 +248,8 @@ export class Services extends Construct {
       }
     );
 
-    // RAG lambda
-    const raglambdaExecRole = new Role(this, "RaglambdaExecRole", {
+    // Agent Core lambda
+    const agentCoreLambdaExecRole = new Role(this, "AgentCoreLambdaExecRole", {
       assumedBy: new ServicePrincipal("lambda.amazonaws.com"),
       managedPolicies: [
         ManagedPolicy.fromAwsManagedPolicyName(
@@ -260,30 +261,73 @@ export class Services extends Construct {
       ],
     });
 
-    const ragService = new python.PythonFunction(this, "RagService", {
-      functionName: "ragService",
-      entry: path.join(__dirname, "services/ragService/"),
+    const agentCoreService = new python.PythonFunction(this, "AgentCoreService", {
+      functionName: "agentCoreService",
+      entry: path.join(__dirname, "services/agentCoreService/"),
       runtime: Runtime.PYTHON_3_12,
       architecture: Architecture.ARM_64,
-      index: "rag_service.py",
+      index: "agentcore_service.py",
       handler: "lambda_handler",
       timeout: Duration.seconds(60),
       memorySize: 256,
-      role: raglambdaExecRole,
+      role: agentCoreLambdaExecRole,
       layers: [props.lambdaPowerToolsLayer, props.utilsLayer],
       bundling: {
         platform: "linux/arm64",
       },
       environment: {
-        POWERTOOLS_SERVICE_NAME: "RagService",
-        POWERTOOLS_METRICS_NAMESPACE: "SaaSRAGGenAI",
+        POWERTOOLS_SERVICE_NAME: "AgentCoreService",
+        POWERTOOLS_METRICS_NAMESPACE: "SaaSAgentCoreGenAI",
       },
     });
 
-    this.ragService = ragService;
-    invoke.addMethod(
+    this.agentCoreService = agentCoreService;
+    agentResolution.addMethod(
       "POST",
-      new LambdaIntegration(this.ragService, { proxy: true }),
+      new LambdaIntegration(this.agentCoreService, { proxy: true }),
+      {
+        authorizer: authorizer,
+        authorizationType: apigw.AuthorizationType.CUSTOM,
+        apiKeyRequired: true,
+      }
+    );
+    
+    // RAG Resolution lambda
+    const ragResolutionLambdaExecRole = new Role(this, "RagResolutionLambdaExecRole", {
+      assumedBy: new ServicePrincipal("lambda.amazonaws.com"),
+      managedPolicies: [
+        ManagedPolicy.fromAwsManagedPolicyName(
+          "CloudWatchLambdaInsightsExecutionRolePolicy"
+        ),
+        ManagedPolicy.fromAwsManagedPolicyName(
+          "service-role/AWSLambdaBasicExecutionRole"
+        ),
+      ],
+    });
+
+    const ragResolutionService = new python.PythonFunction(this, "RagResolutionService", {
+      functionName: "ragResolutionService",
+      entry: path.join(__dirname, "services/ragResolutionService/"),
+      runtime: Runtime.PYTHON_3_12,
+      architecture: Architecture.ARM_64,
+      index: "rag_resolution_service.py",
+      handler: "lambda_handler",
+      timeout: Duration.seconds(60),
+      memorySize: 256,
+      role: ragResolutionLambdaExecRole,
+      layers: [props.lambdaPowerToolsLayer, props.utilsLayer],
+      bundling: {
+        platform: "linux/arm64",
+      },
+      environment: {
+        POWERTOOLS_SERVICE_NAME: "RagResolutionService",
+        POWERTOOLS_METRICS_NAMESPACE: "SaaSRagResolutionGenAI",
+      },
+    });
+    
+    resolution.addMethod(
+      "POST",
+      new LambdaIntegration(ragResolutionService, { proxy: true }),
       {
         authorizer: authorizer,
         authorizationType: apigw.AuthorizationType.CUSTOM,

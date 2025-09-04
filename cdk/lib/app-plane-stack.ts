@@ -5,11 +5,12 @@ import {
   ProvisioningScriptJob,
   DeprovisioningScriptJob
 } from '@cdklabs/sbt-aws';
-import { Stack, StackProps } from 'aws-cdk-lib';
+import { Stack, StackProps, CfnOutput, aws_s3_assets as assets } from 'aws-cdk-lib';
 import { EventBus } from 'aws-cdk-lib/aws-events';
 import { Effect, PolicyDocument, PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Construct } from 'constructs';
 import * as fs from 'fs';
+import * as path from 'path';
 
 export interface AppPlaneStackProps extends StackProps {
   readonly eventBusArn: string;
@@ -35,12 +36,36 @@ export class AppPlaneStack extends Stack {
       permissions: new PolicyDocument({
         statements: [
           new PolicyStatement({
-            actions: ['*'],
-            resources: ['*'],
+            actions: [
+              's3:GetObject',
+              's3:PutObject',
+              's3:ListBucket',
+              'dynamodb:PutItem',
+              'dynamodb:GetItem',
+              'dynamodb:UpdateItem',
+              'dynamodb:Query',
+              'cognito-idp:AdminCreateUser',
+              'cognito-idp:AdminAddUserToGroup',
+              'cognito-idp:AdminSetUserPassword',
+              "cognito-idp:AdminUpdateUserAttributes",
+              "cognito-idp:AdminGetUser",
+              "cognito-idp:CreateGroup",
+              "cognito-idp:GetGroup",
+              'events:PutEvents',
+              'cloudformation:DescribeStacks',
+              'codebuild:StartBuild',
+              "lambda:AddPermission",
+              "events:PutRule",
+              "events:PutTargets",
+              'apigateway:*'
+            ],
+            resources: ['*'], // In a production environment, this should be more specific
             effect: Effect.ALLOW,
           }),
         ],
       }),
+      // Use the script directly for simplicity, but in a production environment
+      // consider using an asset for better versioning and deployment
       script: fs.readFileSync('./scripts/provisioning.sh', 'utf8'),
       environmentStringVariablesFromIncomingEvent: [
         'tenantId',
@@ -68,8 +93,16 @@ export class AppPlaneStack extends Stack {
       permissions: new PolicyDocument({
         statements: [
           new PolicyStatement({
-            actions: ['*'],
-            resources: ['*'],
+            actions: [
+              's3:DeleteObject',
+              's3:ListBucket',
+              'dynamodb:DeleteItem',
+              'dynamodb:GetItem',
+              'cognito-idp:AdminDeleteUser',
+              'cognito-idp:ListUsers',
+              'events:PutEvents',
+            ],
+            resources: ['*'], // In a production environment, this should be more specific
             effect: Effect.ALLOW,
           }),
         ],
@@ -96,6 +129,22 @@ export class AppPlaneStack extends Stack {
     new CoreApplicationPlane(this, 'CoreApplicationPlane', {
       eventManager: eventManager,
       scriptJobs: [provisioningScriptJob, deprovisioningScriptJob]
+    });
+    
+    // Add outputs
+    new CfnOutput(this, 'EventBusArn', {
+      value: eventManager.busArn,
+      description: 'The ARN of the Event Bus',
+    });
+    
+    new CfnOutput(this, 'ProvisioningScriptJobId', {
+      value: provisioningScriptJob.node.id,
+      description: 'The ID of the Provisioning Script Job',
+    });
+    
+    new CfnOutput(this, 'DeprovisioningScriptJobId', {
+      value: deprovisioningScriptJob.node.id,
+      description: 'The ID of the Deprovisioning Script Job',
     });
   }
 }

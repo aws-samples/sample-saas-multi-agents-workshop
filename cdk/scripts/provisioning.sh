@@ -1,133 +1,189 @@
-#!/bin/bash -e
+#!/bin/bash
+#
+# Tenant Provisioning Script
+# This script handles the provisioning of resources for a new tenant
+#
 
-# Install/update the AWS CLI.
-# sudo yum remove awscli
+# Exit on error, but allow pipeline commands to fail
+set -e
+set -o pipefail
 
-# curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-# unzip awscliv2.zip
-# sudo ./aws/install
+# Function for logging with timestamps
+log() {
+  local level=$1
+  shift
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $*"
+}
 
+# Function to check if a command succeeded
+check_command() {
+  if [ $? -ne 0 ]; then
+    log "ERROR" "$1"
+    exit 1
+  fi
+}
+
+log "INFO" "Starting tenant provisioning process"
+
+# Get source code from S3
+log "INFO" "Retrieving tenant source code"
 S3_TENANT_SOURCECODE_BUCKET_URL=$(aws cloudformation describe-stacks --stack-name saas-genai-workshop-common-resources --query "Stacks[0].Outputs[?OutputKey=='TenantSourceCodeS3Bucket'].OutputValue" --output text)
+check_command "Failed to get source code bucket URL"
+
 export CDK_PARAM_CODE_REPOSITORY_NAME="saas-genai-workshop"
 
 # Download the folder from S3 to local directory
-echo "Downloading folder from s3://$S3_TENANT_SOURCECODE_BUCKET_URL to $CDK_PARAM_CODE_REPOSITORY_NAME..."
+log "INFO" "Downloading folder from s3://$S3_TENANT_SOURCECODE_BUCKET_URL to $CDK_PARAM_CODE_REPOSITORY_NAME..."
 aws s3 cp "s3://$S3_TENANT_SOURCECODE_BUCKET_URL" "$CDK_PARAM_CODE_REPOSITORY_NAME" --recursive \
 --exclude "cdk/cdk.out/*" --exclude "cdk/node_modules/*" --exclude ".git/*" --quiet
+check_command "Failed to download source code from S3"
+
 cd $CDK_PARAM_CODE_REPOSITORY_NAME/cdk
 
+# Start the tenant onboarding process
+log "INFO" "Starting tenant onboarding with CodeBuild"
 aws codebuild start-build --project-name TenantOnboardingProject --environment-variables-override \
 name=TENANT_ID,value=$tenantId,type=PLAINTEXT \
 name=PLAN,value=$tier,type=PLAINTEXT \
 name=COMPANY_NAME,value=$tenantName,type=PLAINTEXT \
 name=ADMIN_EMAIL,value=$email,type=PLAINTEXT
+check_command "Failed to start CodeBuild project"
 
-STACK_NAME="TenantStack-$tenantId"
+# Use the tenantId directly since the tenant-onboarding-stack doesn't create resources anymore
+SAAS_TENANT_ID=$tenantId
+log "INFO" "TenantId: $SAAS_TENANT_ID"
 
-echo Waiting
-aws cloudformation wait stack-exists --stack-name $STACK_NAME
-echo Waiting
-aws cloudformation wait stack-exists --stack-name $STACK_NAME
-
-aws cloudformation wait stack-create-complete --stack-name $STACK_NAME
-STACKS=$(aws cloudformation describe-stacks --stack-name $STACK_NAME)
-echo "Stacks: $STACKS"
-SAAS_TENANT_ID=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='TenantId'].OutputValue" --output text)
-echo "TenantId: $SAAS_TENANT_ID"
-SAAS_APP_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='ClientId'].OutputValue" --output text)
-echo "ClientId: $SAAS_APP_CLIENT_ID"
-SAAS_AUTH_SERVER=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='AuthServer'].OutputValue" --output text)
-echo "AuthServer: $SAAS_AUTH_SERVER"
-SAAS_REDIRECT_URL=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='RedirectUri'].OutputValue" --output text)
-echo "RedirectUri: $SAAS_REDIRECT_URL"
-
-# Get the S3 bucket name from the common resources stack
+# Get common resources from the shared stack
+log "INFO" "Retrieving common resources"
 COMMON_RESOURCES_STACK="saas-genai-workshop-common-resources"
+
 DATA_BUCKET=$(aws cloudformation describe-stacks --stack-name $COMMON_RESOURCES_STACK --query "Stacks[0].Outputs[?OutputKey=='DataBucketName'].OutputValue" --output text)
-echo "Data Bucket: $DATA_BUCKET"
+log "INFO" "Data Bucket: $DATA_BUCKET"
 
 TENANT_DATA_TABLE=$(aws cloudformation describe-stacks --stack-name $COMMON_RESOURCES_STACK --query "Stacks[0].Outputs[?OutputKey=='TenantDataTableName'].OutputValue" --output text)
-echo "Tenant Data Table: $TENANT_DATA_TABLE"
+log "INFO" "Tenant Data Table: $TENANT_DATA_TABLE"
 
 KNOWLEDGE_BASE_ID=$(aws cloudformation describe-stacks --stack-name $COMMON_RESOURCES_STACK --query "Stacks[0].Outputs[?OutputKey=='KnowledgeBaseId'].OutputValue" --output text)
-echo "Knowledge Base ID: $KNOWLEDGE_BASE_ID"
+log "INFO" "Knowledge Base ID: $KNOWLEDGE_BASE_ID"
 
-# Create tenant prefix folders in S3 buckets
-echo "Creating tenant prefix folders for tenant $SAAS_TENANT_ID..."
+LOGS_BUCKET=$(aws cloudformation describe-stacks --stack-name $COMMON_RESOURCES_STACK --query "Stacks[0].Outputs[?OutputKey=='LogsBucketName'].OutputValue" --output text)
+log "INFO" "Logs Bucket: $LOGS_BUCKET"
+
+# Get the trigger ingestion Lambda ARN
+TRIGGER_INGESTION_LAMBDA=$(aws cloudformation describe-stacks --stack-name $COMMON_RESOURCES_STACK --query "Stacks[0].Outputs[?OutputKey=='SaaSGenAIWorkshopTriggerIngestionLambdaArn'].OutputValue" --output text || echo "dummy-value")
+log "INFO" "Trigger Ingestion Lambda: $TRIGGER_INGESTION_LAMBDA"
+
+# Get OpenSearch and API Gateway resources
+API_GATEWAY_USAGE_PLAN_ID=$(aws cloudformation describe-stacks --stack-name $COMMON_RESOURCES_STACK --query "Stacks[0].Outputs[?OutputKey=='ApiGatewayUsagePlan'].OutputValue" --output text || echo "dummy-value")
+API_GATEWAY_URL=$(aws cloudformation describe-stacks --stack-name $COMMON_RESOURCES_STACK --query "Stacks[0].Outputs[?OutputKey=='ApiGatewayUrl'].OutputValue" --output text || echo "dummy-value")
+log "INFO" "API Gateway URL: $API_GATEWAY_URL"
+
+# Get common app client ID
+COMMON_SAAS_APP_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name $COMMON_RESOURCES_STACK --query "Stacks[0].Outputs[?OutputKey=='UserPoolClientId'].OutputValue" --output text || echo "dummy-value")
+log "INFO" "Common App Client ID: $COMMON_SAAS_APP_CLIENT_ID"
+
+# Generate a unique API key for the tenant
+TENANT_API_KEY=$(python3 -c "import uuid; print(f'{uuid.uuid4()}-sbt')")
 
 # Set environment variables for tenant provisioning
-export DATA_BUCKET=$DATA_BUCKET
-export LOGS_BUCKET=$(aws cloudformation describe-stacks --stack-name $COMMON_RESOURCES_STACK --query "Stacks[0].Outputs[?OutputKey=='LogsBucketName'].OutputValue" --output text)
-echo "Logs Bucket: $LOGS_BUCKET"
+log "INFO" "Setting up environment variables for tenant provisioning"
+export DATA_BUCKET
+export LOGS_BUCKET
 export TRIGGER_PIPELINE_INGESTION_LAMBDA_ARN=$TRIGGER_INGESTION_LAMBDA
-export OPENSEARCH_SERVERLESS_COLLECTION_ARN=$(aws cloudformation describe-stacks --stack-name $COMMON_RESOURCES_STACK --query "Stacks[0].Outputs[?OutputKey=='SaaSGenAIWorkshopOSSCollectionArn'].OutputValue" --output text || echo "dummy-value")
-export API_GATEWAY_USAGE_PLAN_ID=$(aws cloudformation describe-stacks --stack-name $COMMON_RESOURCES_STACK --query "Stacks[0].Outputs[?OutputKey=='ApiGatewayUsagePlan'].OutputValue" --output text || echo "dummy-value")
-export TENANT_API_KEY=$(python3 -c "import uuid; print(f'{uuid.uuid4()}-sbt')")
+export API_GATEWAY_USAGE_PLAN_ID
+export TENANT_API_KEY
 
-# Call tenant provisioning service
-if [ -f "lib/tenant-template/tenant-provisioning/tenant_provisioning_service.py" ]; then
+# Run tenant provisioning service
+log "INFO" "Running tenant provisioning service"
+TENANT_PROVISIONING_SCRIPT="lib/tenant-template/tenant-provisioning/tenant_provisioning_service.py"
+if [ -f "$TENANT_PROVISIONING_SCRIPT" ]; then
   # Install required packages
-  if [ -f "lib/tenant-template/tenant-provisioning/requirements.txt" ]; then
-    pip3 install -r lib/tenant-template/tenant-provisioning/requirements.txt
+  REQUIREMENTS_FILE="lib/tenant-template/tenant-provisioning/requirements.txt"
+  if [ -f "$REQUIREMENTS_FILE" ]; then
+    log "INFO" "Installing tenant provisioning dependencies"
+    pip3 install -r "$REQUIREMENTS_FILE"
+    check_command "Failed to install tenant provisioning dependencies"
   fi
   
-  echo "Calling tenant provisioning service for tenant $SAAS_TENANT_ID..."
-  tenant_provision_output=$(python3 lib/tenant-template/tenant-provisioning/tenant_provisioning_service.py --tenantid $SAAS_TENANT_ID 2>&1)
+  log "INFO" "Calling tenant provisioning service for tenant $SAAS_TENANT_ID..."
+
+
+set +e  # Temporarily disable exit-on-error
+  tenant_provision_output=$(python3 "$TENANT_PROVISIONING_SCRIPT" --tenantid "$SAAS_TENANT_ID" 2>&1)
   exit_code=$?
+  set -e  # Re-enable exit-on-error
   
   if [ $exit_code -ne 0 ]; then
-    echo "ERROR: Tenant provisioning failed with exit code $exit_code"
-    echo "$tenant_provision_output"
+    log "ERROR" "Tenant provisioning failed with exit code $exit_code"
+    log "ERROR" "$tenant_provision_output"
+    # Continue execution despite error to allow partial provisioning
   else
-    echo "Tenant provisioning completed successfully"
+    log "INFO" "Tenant provisioning completed successfully"
   fi
 else
-  echo "tenant_provisioning_service.py not found, skipping tenant provisioning"
+  log "WARN" "Tenant provisioning script not found at $TENANT_PROVISIONING_SCRIPT, skipping tenant provisioning"
 fi
 
-# Get the user pool ID from the common resources stack
+# Create tenant admin user
+log "INFO" "Setting up tenant admin user"
 USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name $COMMON_RESOURCES_STACK --query "Stacks[0].Outputs[?OutputKey=='TenantUserpoolId'].OutputValue" --output text || echo "")
 
-# Create tenant admin user if user management service exists
-if [ -f "lib/tenant-template/user-management/user_management_service.py" ]; then
+USER_MANAGEMENT_SCRIPT="lib/tenant-template/user-management/user_management_service.py"
+if [ -f "$USER_MANAGEMENT_SCRIPT" ]; then
   # Install required packages if there's a requirements file
-  if [ -f "lib/tenant-template/user-management/requirements.txt" ]; then
-    pip3 install -r lib/tenant-template/user-management/requirements.txt
+  USER_MGMT_REQUIREMENTS="lib/tenant-template/user-management/requirements.txt"
+  if [ -f "$USER_MGMT_REQUIREMENTS" ]; then
+    log "INFO" "Installing user management dependencies"
+    pip3 install -r "$USER_MGMT_REQUIREMENTS"
+    check_command "Failed to install user management dependencies"
   fi
   
-  echo "Creating tenant admin user for tenant $SAAS_TENANT_ID..."
+  log "INFO" "Creating tenant admin user for tenant $SAAS_TENANT_ID..."
   export SAAS_APP_USERPOOL_ID=$USER_POOL_ID
   
-  tenant_admin_output=$(python3 lib/tenant-template/user-management/user_management_service.py --tenant-id $SAAS_TENANT_ID --email $email --user-role "TenantAdmin" 2>&1)
+  set +e
+  tenant_admin_output=$(python3 "$USER_MANAGEMENT_SCRIPT" --tenant-id "$SAAS_TENANT_ID" --email "$email" --user-role "TenantAdmin" 2>&1)
   exit_code=$?
+  set -e
   
   if [ $exit_code -ne 0 ]; then
-    echo "ERROR: Tenant admin user creation failed with exit code $exit_code"
-    echo "$tenant_admin_output"
+    log "ERROR" "Tenant admin user creation failed with exit code $exit_code"
+    log "ERROR" "$tenant_admin_output"
+    # Continue execution despite error
   else
-    echo "Tenant admin user created successfully"
+    log "INFO" "Tenant admin user created successfully"
   fi
 else
-  echo "user_management_service.py not found, skipping tenant admin user creation"
+  log "WARN" "User management script not found at $USER_MANAGEMENT_SCRIPT, skipping tenant admin user creation"
 fi
 
 # Trigger knowledge base ingestion
-echo "Triggering knowledge base ingestion for tenant $SAAS_TENANT_ID..."
-TRIGGER_INGESTION_LAMBDA=$(aws cloudformation describe-stacks --stack-name $COMMON_RESOURCES_STACK --query "Stacks[0].Outputs[?OutputKey=='SaaSGenAIWorkshopTriggerIngestionLambdaArn'].OutputValue" --output text)
+# Commented out as ingestion disabled on new tenant onboarding
+# log "INFO" "Triggering knowledge base ingestion for tenant $SAAS_TENANT_ID..."
 
-if [ "$TRIGGER_INGESTION_LAMBDA" != "dummy-value" ]; then
-  # If we have a real Lambda ARN, invoke it
-  aws lambda invoke --function-name $TRIGGER_INGESTION_LAMBDA --payload "{\"knowledgeBaseId\":\"$KNOWLEDGE_BASE_ID\",\"tenantId\":\"$SAAS_TENANT_ID\"}" /tmp/lambda-output.json
-  echo "Knowledge base ingestion triggered for tenant $SAAS_TENANT_ID"
-else
-  echo "Knowledge base ingestion Lambda is not available (dummy value). Skipping ingestion."
-fi
+# if [ "$TRIGGER_INGESTION_LAMBDA" != "dummy-value" ] && [ -n "$TRIGGER_INGESTION_LAMBDA" ]; then
+#   # If we have a real Lambda ARN, invoke it
+#   log "INFO" "Invoking Lambda function to trigger knowledge base ingestion"
+#   aws lambda invoke \
+#     --function-name "$TRIGGER_INGESTION_LAMBDA" \
+#     --payload "{\"knowledgeBaseId\":\"$KNOWLEDGE_BASE_ID\",\"tenantId\":\"$SAAS_TENANT_ID\"}" \
+#     /tmp/lambda-output.json
+#   check_command "Failed to invoke knowledge base ingestion Lambda"
+#   log "INFO" "Knowledge base ingestion triggered for tenant $SAAS_TENANT_ID"
+# else
+#   log "WARN" "Knowledge base ingestion Lambda is not available. Skipping ingestion."
+# fi
 
-#Export variables
+# Export tenant configuration
+log "INFO" "Exporting tenant configuration"
 export tenantStatus="Complete"
-export tenantConfig=$(jq --arg SAAS_TENANT_ID "$SAAS_TENANT_ID" \
-  --arg SAAS_APP_CLIENT_ID "$SAAS_APP_CLIENT_ID" \
-  --arg SAAS_AUTH_SERVER "$SAAS_AUTH_SERVER" \
-  --arg SAAS_REDIRECT_URL "$SAAS_REDIRECT_URL" \
-  --arg USER_POOL_ID "$USER_POOL_ID" \
-  -n '{"tenantId":$SAAS_TENANT_ID,"appClientId":$SAAS_APP_CLIENT_ID,"authServer":$SAAS_AUTH_SERVER,"redirectUrl":$SAAS_REDIRECT_URL,"userPoolId":$USER_POOL_ID}')
+export tenantConfig=$(jq --arg SAAS_APP_USERPOOL_ID "$SAAS_APP_USERPOOL_ID" \
+  --arg SAAS_TENANT_ID "$SAAS_TENANT_ID" \
+  --arg SAAS_APP_CLIENT_ID "$COMMON_SAAS_APP_CLIENT_ID" \
+  --arg KNOWLEDGE_BASE_ID "$KNOWLEDGE_BASE_ID" \
+  --arg TENANT_API_KEY "$TENANT_API_KEY" \
+  --arg API_GATEWAY_URL "$API_GATEWAY_URL" \
+  --arg TENANT_NAME "$tenantName" \
+  -n '{"tenantId":$SAAS_TENANT_ID,"tenantName":$TENANT_NAME,"userPoolId":$SAAS_APP_USERPOOL_ID, "appClientId":$SAAS_APP_CLIENT_ID,"knowledgeBaseId":$KNOWLEDGE_BASE_ID,"apiKey":$TENANT_API_KEY,"apiGatewayUrl":$API_GATEWAY_URL}')
+
+log "INFO" "Tenant provisioning completed successfully"

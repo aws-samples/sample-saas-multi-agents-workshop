@@ -25,6 +25,8 @@ help() {
   echo "  get-all-users <limit> <next_token>"
   echo "  update-user <user_id> <user_role> <user_email>"
   echo "  delete-user <user_id>"
+  echo "  agent-resolution <tenant_id> <query>"
+  echo "  direct-resolution <tenant_id> <query>"
   echo "  help"
 }
 
@@ -468,6 +470,104 @@ delete_user() {
   fi
 }
 
+agent_resolution() {
+  source_config
+  TENANT_ID="$1"
+  QUERY="$2"
+
+  if $DEBUG; then
+    echo "Calling agent-resolution for tenant: $TENANT_ID with query: $QUERY"
+  fi
+
+  # Get the API Gateway URL from the tenant stack
+  TENANT_STACK_NAME="${TENANT_ID}-tenant-stack"
+  API_GATEWAY_URL=$(aws cloudformation describe-stacks \
+    --stack-name "$TENANT_STACK_NAME" \
+    --query "Stacks[0].Outputs[?OutputKey=='ApiGatewayUrl'].OutputValue" \
+    --output text)
+
+  if [ -z "$API_GATEWAY_URL" ]; then
+    echo "Error: Could not find API Gateway URL for tenant $TENANT_ID"
+    exit 1
+  fi
+
+  # Get the API key for the tenant
+  API_KEY=$(aws apigateway get-api-keys \
+    --name-query "$TENANT_ID" \
+    --include-values \
+    --query "items[0].value" \
+    --output text)
+
+  if [ -z "$API_KEY" ]; then
+    echo "Error: Could not find API key for tenant $TENANT_ID"
+    exit 1
+  fi
+
+  # Call the agent-resolution endpoint
+  RESPONSE=$(curl --request POST \
+    --url "${API_GATEWAY_URL}agent-resolution" \
+    --header "Authorization: Bearer ${ACCESS_TOKEN}" \
+    --header "x-api-key: ${API_KEY}" \
+    --header 'content-type: application/json' \
+    --data "$QUERY" \
+    --silent)
+
+  if $DEBUG; then
+    echo "Response: $RESPONSE"
+  else
+    echo "$RESPONSE"
+  fi
+}
+
+direct_resolution() {
+  source_config
+  TENANT_ID="$1"
+  QUERY="$2"
+
+  if $DEBUG; then
+    echo "Calling direct-resolution for tenant: $TENANT_ID with query: $QUERY"
+  fi
+
+  # Get the API Gateway URL from the tenant stack
+  TENANT_STACK_NAME="${TENANT_ID}-tenant-stack"
+  API_GATEWAY_URL=$(aws cloudformation describe-stacks \
+    --stack-name "$TENANT_STACK_NAME" \
+    --query "Stacks[0].Outputs[?OutputKey=='ApiGatewayUrl'].OutputValue" \
+    --output text)
+
+  if [ -z "$API_GATEWAY_URL" ]; then
+    echo "Error: Could not find API Gateway URL for tenant $TENANT_ID"
+    exit 1
+  fi
+
+  # Get the API key for the tenant
+  API_KEY=$(aws apigateway get-api-keys \
+    --name-query "$TENANT_ID" \
+    --include-values \
+    --query "items[0].value" \
+    --output text)
+
+  if [ -z "$API_KEY" ]; then
+    echo "Error: Could not find API key for tenant $TENANT_ID"
+    exit 1
+  fi
+
+  # Call the resolution endpoint
+  RESPONSE=$(curl --request POST \
+    --url "${API_GATEWAY_URL}resolution" \
+    --header "Authorization: Bearer ${ACCESS_TOKEN}" \
+    --header "x-api-key: ${API_KEY}" \
+    --header 'content-type: application/json' \
+    --data "$QUERY" \
+    --silent)
+
+  if $DEBUG; then
+    echo "Response: $RESPONSE"
+  else
+    echo "$RESPONSE"
+  fi
+}
+
 # Main
 DEBUG=false
 if [ "$1" = "--debug" ]; then
@@ -564,6 +664,22 @@ case "$1" in
     exit 1
   fi
   delete_user "$2"
+  ;;
+
+"agent-resolution")
+  if [ $# -ne 3 ]; then
+    echo "Error: agent-resolution requires tenant_id and query"
+    exit 1
+  fi
+  agent_resolution "$2" "$3"
+  ;;
+
+"direct-resolution")
+  if [ $# -ne 3 ]; then
+    echo "Error: direct-resolution requires tenant_id and query"
+    exit 1
+  fi
+  direct_resolution "$2" "$3"
   ;;
 
 "help")
