@@ -68,7 +68,13 @@ def retrieve_and_generate(session, query, knowledge_base_id, tenant_id, event=No
                 "modelArn": model_arn,
                 "retrievalConfiguration": {
                     "vectorSearchConfiguration": {
-                        "numberOfResults": 5
+                        "numberOfResults": 5,
+                        "filter": {
+                            "equals": {
+                                "key": "tenant_id",
+                                "value": tenant_id
+                            }
+                        }
                     }
                 }
             }

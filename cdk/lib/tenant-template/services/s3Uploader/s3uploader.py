@@ -60,14 +60,30 @@ def lambda_handler(event, context):
     s3_key = f"{s3_prefix}/{file_name}"
     
     try:
+        # Upload the meeting notes to S3
         s3.put_object(Bucket=s3_bucket, Key=s3_key, Body=notes)
         logger.info(f"Meeting notes uploaded to S3://{s3_prefix}/{file_name}")
+        
+        # Create metadata JSON file with tenant_id
+        metadata_content = {
+            "metadataAttributes": {
+                "tenant_id": tenantId
+            }
+        }
+        metadata_key = f"{s3_prefix}/{file_name}.metadata.json"
+        s3.put_object(
+            Bucket=s3_bucket,
+            Key=metadata_key,
+            Body=json.dumps(metadata_content, indent=2),
+            ContentType='application/json'
+        )
+        logger.info(f"Metadata file uploaded to S3://{s3_prefix}/{file_name}.metadata.json")
         
         # Return a success response
         return {
             'statusCode': 200,
             'body': json.dumps({
-                'message': 'Received your notes',
+                'message': 'Received your notes and created metadata',
             })
         }
         
