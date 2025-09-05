@@ -27,7 +27,7 @@ cors_config = CORSConfig(allow_origin="*", max_age=300)
 app = APIGatewayRestResolver(cors=cors_config)
 
 region_id = os.environ['AWS_REGION']
-MODEL_ID = "amazon.titan-text-lite-v1"
+MODEL_ID = 'us.amazon.nova-micro-v1:0'
 
 def retrieveAndGenerate(bedrock_agent_client, bedrock_client, input, knowledge_base_id, event):
     vector_retrieval_config={"vectorSearchConfiguration": {
@@ -60,7 +60,12 @@ def retrieveAndGenerate(bedrock_agent_client, bedrock_client, input, knowledge_b
         )
 
     
-    llm = ChatBedrockConverse(model=MODEL_ID, temperature=0, client=bedrock_client)
+    # Get account ID to construct the inference profile ARN
+    sts_client = boto3.client('sts')
+    account_id = sts_client.get_caller_identity()["Account"]
+    inference_profile_arn = f'arn:aws:bedrock:{region_id}:{account_id}:inference-profile/{MODEL_ID}'
+    
+    llm = ChatBedrockConverse(model=inference_profile_arn, temperature=0, client=bedrock_client)
 
     rag_chain = (
         {"context": retriever , "question": RunnablePassthrough()}

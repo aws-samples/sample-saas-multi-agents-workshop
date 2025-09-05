@@ -66,6 +66,9 @@ log "INFO" "Tenant Data Table: $TENANT_DATA_TABLE"
 KNOWLEDGE_BASE_ID=$(aws cloudformation describe-stacks --stack-name $COMMON_RESOURCES_STACK --query "Stacks[0].Outputs[?OutputKey=='KnowledgeBaseId'].OutputValue" --output text)
 log "INFO" "Knowledge Base ID: $KNOWLEDGE_BASE_ID"
 
+DATA_SOURCE_ID=$(aws cloudformation describe-stacks --stack-name $COMMON_RESOURCES_STACK --query "Stacks[0].Outputs[?OutputKey=='DataSourceId'].OutputValue" --output text)
+log "INFO" "Data Source ID: $DATA_SOURCE_ID"
+
 LOGS_BUCKET=$(aws cloudformation describe-stacks --stack-name $COMMON_RESOURCES_STACK --query "Stacks[0].Outputs[?OutputKey=='LogsBucketName'].OutputValue" --output text)
 log "INFO" "Logs Bucket: $LOGS_BUCKET"
 
@@ -92,6 +95,8 @@ export LOGS_BUCKET
 export TRIGGER_PIPELINE_INGESTION_LAMBDA_ARN=$TRIGGER_INGESTION_LAMBDA
 export API_GATEWAY_USAGE_PLAN_ID
 export TENANT_API_KEY
+export KNOWLEDGE_BASE_ID
+export DATA_SOURCE_ID
 
 # Run tenant provisioning service
 log "INFO" "Running tenant provisioning service"
@@ -181,9 +186,10 @@ export tenantConfig=$(jq --arg SAAS_APP_USERPOOL_ID "$SAAS_APP_USERPOOL_ID" \
   --arg SAAS_TENANT_ID "$SAAS_TENANT_ID" \
   --arg SAAS_APP_CLIENT_ID "$COMMON_SAAS_APP_CLIENT_ID" \
   --arg KNOWLEDGE_BASE_ID "$KNOWLEDGE_BASE_ID" \
+  --arg DATA_SOURCE_ID "$DATA_SOURCE_ID" \
   --arg TENANT_API_KEY "$TENANT_API_KEY" \
   --arg API_GATEWAY_URL "$API_GATEWAY_URL" \
   --arg TENANT_NAME "$tenantName" \
-  -n '{"tenantId":$SAAS_TENANT_ID,"tenantName":$TENANT_NAME,"userPoolId":$SAAS_APP_USERPOOL_ID, "appClientId":$SAAS_APP_CLIENT_ID,"knowledgeBaseId":$KNOWLEDGE_BASE_ID,"apiKey":$TENANT_API_KEY,"apiGatewayUrl":$API_GATEWAY_URL}')
+  -n '{"tenantId":$SAAS_TENANT_ID,"tenantName":$TENANT_NAME,"userPoolId":$SAAS_APP_USERPOOL_ID, "appClientId":$SAAS_APP_CLIENT_ID,"knowledgeBaseId":$KNOWLEDGE_BASE_ID,"dataSourceId":$DATA_SOURCE_ID,"apiKey":$TENANT_API_KEY,"apiGatewayUrl":$API_GATEWAY_URL}')
 
 log "INFO" "Tenant provisioning completed successfully"

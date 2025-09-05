@@ -155,9 +155,11 @@ export class Services extends Construct {
             }),
             new PolicyStatement({
               effect: Effect.ALLOW,
-              actions: ["bedrock:InvokeModel"],
+              actions: ["bedrock:InvokeModel", "bedrock:GetInferenceProfile"],
               resources: [
-                "arn:aws:bedrock:*::foundation-model/amazon.titan-text-lite-v1",
+                "arn:aws:bedrock:*::foundation-model/amazon.nova-micro-v1:0",
+                `arn:aws:bedrock:*:${accountId}:inference-profile/us.amazon.nova-micro-v1:0`
+                ,
               ],
             }),
             new PolicyStatement({

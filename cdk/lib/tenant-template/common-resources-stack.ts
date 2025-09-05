@@ -315,6 +315,11 @@ export class CommonResourcesStack extends Stack {
       description: "The ID of the Bedrock Knowledge Base"
     });
     
+    new CfnOutput(this, "DataSourceId", {
+      value: knowledgeBase.dataSource.attrDataSourceId,
+      description: "The ID of the Bedrock Knowledge Base Data Source"
+    });
+    
     new CfnOutput(this, "SaaSGenAIWorkshopS3Bucket", {
       value: dataBucket.bucketName,
       description: "The name of the S3 bucket for tenant data"

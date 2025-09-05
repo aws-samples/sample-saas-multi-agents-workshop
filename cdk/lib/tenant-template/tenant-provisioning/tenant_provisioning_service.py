@@ -21,6 +21,8 @@ DATA_BUCKET = os.environ['DATA_BUCKET']
 LOGS_BUCKET = os.environ['LOGS_BUCKET']
 TRIGGER_PIPELINE_INGESTION_LAMBDA_ARN = os.environ['TRIGGER_PIPELINE_INGESTION_LAMBDA_ARN']
 TENANT_API_KEY = os.environ['TENANT_API_KEY']
+KNOWLEDGE_BASE_ID = os.environ.get('KNOWLEDGE_BASE_ID', '')
+DATA_SOURCE_ID = os.environ.get('DATA_SOURCE_ID', '')
 
 # Use the environment variable for the embedding model or fall back to a default
 EMBEDDING_MODEL_ARN = os.environ.get(
@@ -69,7 +71,7 @@ def provision_tenant_resources(tenant_id):
 
     try:
         # Create S3 tenant prefix and EventBridge rule
-        rule_name = __create_s3_tenant_prefix(tenant_id, rule_name)
+        __create_s3_tenant_prefix(tenant_id, rule_name)
         
         # Add API key for tenant
         __api_gw_add_api_key(tenant_id)
@@ -189,6 +191,15 @@ def __create_s3_tenant_prefix(tenant_id, rule_name):
         # Create EventBridge rule for the tenant prefix
         rule_arn = __create_eventbridge_tenant_rule(data_prefix, tenant_id, rule_name)
         __create_trigger_lambda_eventbridge_permissions(rule_arn)
+        
+        # Add target to the EventBridge rule
+        # Use the actual knowledge base ID and data source ID from environment variables
+        # If they're not available, fall back to using tenant_id as a placeholder
+        kb_id = KNOWLEDGE_BASE_ID
+        datasource_id = DATA_SOURCE_ID
+        
+        __create_eventbridge_tenant_rule_target(tenant_id, kb_id, rule_name, datasource_id)
+        logger.info(f'EventBridge rule target added for tenant {tenant_id} with KB ID {kb_id} and datasource ID {datasource_id}')
         
         return rule_name
     

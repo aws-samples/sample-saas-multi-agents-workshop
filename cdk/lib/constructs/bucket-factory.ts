@@ -47,6 +47,7 @@ export class BucketFactory {
   ): Bucket {
     return this.createStandardBucket(scope, id, bucketName, {
       objectOwnership: ObjectOwnership.BUCKET_OWNER_PREFERRED,
+      eventBridgeEnabled: true,
       ...additionalProps
     });
   }

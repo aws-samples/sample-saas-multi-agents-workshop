@@ -46,8 +46,11 @@ def retrieve_and_generate(session, query, knowledge_base_id, tenant_id, event=No
 
     # Set the Bedrock model to use for text generation
     # Set the Bedrock model to use for text generation
-    model_id = 'amazon.nova-micro-v1:0'
-    model_arn = f'arn:aws:bedrock:{region_id}::foundation-model/{model_id}'
+    model_id = 'us.amazon.nova-micro-v1:0'
+    # Get account ID from the session
+    sts_client = session.client('sts')
+    account_id = sts_client.get_caller_identity()["Account"]
+    model_arn = f'arn:aws:bedrock:{region_id}:{account_id}:inference-profile/{model_id}'
     
     trace_id = create_short_trace_id()
     
