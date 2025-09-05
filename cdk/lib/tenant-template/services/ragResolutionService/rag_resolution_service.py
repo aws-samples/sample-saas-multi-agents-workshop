@@ -42,31 +42,32 @@ def retrieve_and_generate(session, query, knowledge_base_id, tenant_id, event=No
     
     # Create bedrock client with config
     bedrock_config = Config(connect_timeout=120, read_timeout=120, retries={'max_attempts': 0})
-    bedrock_client = session.client('bedrock-runtime', config=bedrock_config)
-    
-    # Prepare payload for RetrieveAndGenerate
-    payload = {
-        "input": {
-            "text": query
-        },
-        "retrieveAndGenerateConfiguration": {
-            "knowledgeBaseConfiguration": {
-                "knowledgeBaseId": knowledge_base_id,
-                "modelArn": "arn:aws:bedrock:" + region_id + "::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"
-            }
-        }
-    }
+    bedrock_client = session.client('bedrock-agent-runtime', config=bedrock_config)
+
+    # Set the Bedrock model to use for text generation
+    # Set the Bedrock model to use for text generation
+    model_id = 'amazon.nova-micro-v1:0'
+    model_arn = f'arn:aws:bedrock:{region_id}::foundation-model/{model_id}'
     
     trace_id = create_short_trace_id()
     
     logger.info(f"Calling RetrieveAndGenerate with trace ID: {trace_id}, tenant_id: {tenant_id}")
     
-    # Call RetrieveAndGenerate
+    # Call RetrieveAndGenerate with the correct parameter structure
     response = bedrock_client.retrieve_and_generate(
-        input=payload,
-        retrieveConfiguration={
-            "vectorSearchConfiguration": {
-                "numberOfResults": 5
+        input={
+            "text": query
+        },
+        retrieveAndGenerateConfiguration={
+            "type": "KNOWLEDGE_BASE",
+            "knowledgeBaseConfiguration": {
+                "knowledgeBaseId": knowledge_base_id,
+                "modelArn": model_arn,
+                "retrievalConfiguration": {
+                    "vectorSearchConfiguration": {
+                        "numberOfResults": 5
+                    }
+                }
             }
         }
     )
