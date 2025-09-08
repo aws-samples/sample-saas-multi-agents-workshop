@@ -13,7 +13,7 @@ help() {
   echo "Operations:"
   echo "  configure <control_plane_stack> <user_email>"
   echo "  refresh-tokens"
-  echo "  create-tenant-registration"
+  echo "  create-tenant-registration <tenant_name>"
   echo "  get-tenant-registration <tenant_registration_id>"
   echo "  get-all-tenant-registrations <limit> <next_token>"
   echo "  update-tenant-registration <tenant_registration_id> <key> <value>"
@@ -158,7 +158,7 @@ source_config() {
 
 create_tenant_registration() {
   source_config
-  TENANT_NAME="tenant$RANDOM"
+  TENANT_NAME="$1"
   TENANT_EMAIL="${EMAIL_USERNAME}+${TENANT_NAME}@${EMAIL_DOMAIN}"
 
   if $DEBUG; then
@@ -175,17 +175,6 @@ create_tenant_registration() {
         "tenantName": $tenantName,
         "email": $tenantEmail,
         "tier": "basic",
-        "prices": [
-          {
-            "id": "price_123456789Example",
-            "metricName": "productsSold"
-          },
-          {
-            "id": "price_123456789AnotherExample",
-            "metricName": "plusProductsSold"
-          }
-        ]
-      },
       "tenantRegistrationData": {
         "registrationStatus": "In progress",
         "tenantRegistrationData1": "test"
@@ -618,7 +607,11 @@ case "$1" in
   ;;
 
 "create-tenant-registration")
-  create_tenant_registration
+  if [ $# -ne 2 ]; then
+    echo "Error: create-tenant requires tenant name"
+    exit 1
+  fi
+  create_tenant_registration "$2"
   ;;
 
 "get-tenant-registration")
