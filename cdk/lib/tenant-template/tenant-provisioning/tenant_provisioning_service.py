@@ -115,7 +115,7 @@ def __api_gw_add_api_key(tenant_id):
         
         logger.info(f'API key {api_key} added to usage plan {usage_plan_id} for tenant {tenant_id}')
     except Exception as e:
-        logger.exception(f"Error occurred while adding API key for tenant {tenant_id}")
+        logger.warning(f"Error occurred while adding API key for tenant {tenant_id}: {str(e)}")
         raise TenantProvisioningError(f"Failed to create API key for tenant {tenant_id}: {str(e)}")
     
 # Note: We're removing the __create_tenant_knowledge_base function since we're using a pooled knowledge base
@@ -160,8 +160,9 @@ def __create_tenant_kb_role(tenant_id):
         return role_arn
 
     except Exception as e:
-        logger.exception(f"Error occurred while creating knowledge base role for tenant {tenant_id}")
+        logger.warning(f"Error occurred while creating knowledge base role for tenant {tenant_id}: {str(e)}")
         raise TenantProvisioningError(f"Failed to create knowledge base role for tenant {tenant_id}: {str(e)}")
+
     
 def __create_s3_tenant_prefix(tenant_id, rule_name):
     """
@@ -204,7 +205,7 @@ def __create_s3_tenant_prefix(tenant_id, rule_name):
         return rule_name
     
     except Exception as e:
-        logger.exception(f"Error occurred while creating S3 prefixes for tenant {tenant_id}")
+        logger.warning(f"Error occurred while creating S3 prefixes for tenant {tenant_id}: {str(e)}")
         raise TenantProvisioningError(f"Failed to create S3 prefixes for tenant {tenant_id}: {str(e)}")
     
 def __create_eventbridge_tenant_rule(prefix, tenant_id, rule_name):
@@ -251,7 +252,7 @@ def __create_eventbridge_tenant_rule(prefix, tenant_id, rule_name):
         return rule['RuleArn']
 
     except Exception as e:
-        logger.exception(f"Error occurred while creating EventBridge rule for tenant {tenant_id}")
+        logger.warning(f"Error occurred while creating EventBridge rule for tenant {tenant_id}: {str(e)}")
         raise TenantProvisioningError(f"Failed to create EventBridge rule for tenant {tenant_id}: {str(e)}")
 
 def __create_trigger_lambda_eventbridge_permissions(rule_arn):
@@ -337,7 +338,7 @@ def __create_eventbridge_tenant_rule_target(tenant_id, kb_id, rule_name, datasou
         logger.info(f'EventBridge rule target created for tenant {tenant_id}')
 
     except Exception as e:
-        logger.exception(f"Error occurred while creating EventBridge rule target for tenant {tenant_id}")
+        logger.warning(f"Error occurred while creating EventBridge rule target for tenant {tenant_id}: {str(e)}")
         raise TenantProvisioningError(f"Failed to create EventBridge rule target for tenant {tenant_id}: {str(e)}")
         
 def __get_kb_trust_policy():

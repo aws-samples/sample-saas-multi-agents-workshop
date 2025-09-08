@@ -8,6 +8,8 @@ import boto3
 import time
 import re
 import authorizer_layer
+import requests
+from urllib.parse import urlparse
 
 from jose import jwk, jwt
 from jose.utils import base64url_decode
@@ -26,6 +28,10 @@ tenant_token_usage_role_arn = os.environ["TENANT_TOKEN_USAGE_ROLE_ARN"]
 tenant_token_usage_table = os.environ["TENANT_TOKEN_USAGE_DYNAMODB_TABLE"]
 
 logger = Logger()
+
+def is_safe_url(url):
+    parsed = urlparse(url)
+    return parsed.scheme in ['http', 'https']
 
 def lambda_handler(event, context):
     method_arn = event["methodArn"]
@@ -50,8 +56,11 @@ def lambda_handler(event, context):
 
     # get keys for tenant user pool to validate
     keys_url = 'https://cognito-idp.{}.amazonaws.com/{}/.well-known/jwks.json'.format(region, userpool_id)
-    with urllib.request.urlopen(keys_url) as f:
-        response = f.read()
+    if is_safe_url(keys_url):
+        response = requests.get(keys_url).content
+    else:
+        logger.error(f"Unsafe URL scheme detected: {keys_url}")
+        raise ValueError("URL scheme not allowed")
     keys = json.loads(response.decode('utf-8'))['keys']
 
     # authenticate against cognito user pool using the key
@@ -65,8 +74,11 @@ def lambda_handler(event, context):
     else:
         tenant_id = response["custom:tenantId"]
         response_url = urllib.request.Request(control_plane_gw_url + f'tenant-config?tenantId={tenant_id}')
-        with urllib.request.urlopen(response_url) as f:
-            response_data = f.read()
+        if is_safe_url(response_url):
+            response_data = requests.get(response_url).content
+        else:
+            logger.error(f"Unsafe URL scheme detected: {response_url}")
+            raise ValueError("URL scheme not allowed")
         try:    
             response_text = response_data.decode('utf-8')
             response_json = json.loads(response_text)
