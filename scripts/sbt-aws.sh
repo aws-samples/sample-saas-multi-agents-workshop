@@ -174,7 +174,8 @@ create_tenant_registration() {
       "tenantData": {
         "tenantName": $tenantName,
         "email": $tenantEmail,
-        "tier": "basic",
+        "tier": "basic"
+        },
       "tenantRegistrationData": {
         "registrationStatus": "In progress",
         "tenantRegistrationData1": "test"
