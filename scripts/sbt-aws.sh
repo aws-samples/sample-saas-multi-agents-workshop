@@ -19,6 +19,7 @@ help() {
   echo "  update-tenant-registration <tenant_registration_id> <key> <value>"
   echo "  delete-tenant-registration <tenant_registration_id>"
   echo "  get-tenant <tenant_id>"
+  echo "  get-tenant-id <tenant_name>"
   echo "  get-all-tenants <limit> <next_token>"
   echo "  create-user"
   echo "  get-user <user_id>"
@@ -585,6 +586,32 @@ ingest_data() {
   echo $RESPONSE
 }
 
+get_tenant_id() {
+  source_config
+  TENANT_NAME="$1"
+  
+  if $DEBUG; then
+    echo "Getting tenant ID for tenant name: $TENANT_NAME"
+  fi
+  
+  # Get all tenants
+  TENANTS=$(get_all_tenants)
+  
+  # Extract the tenant ID for the matching tenant name
+  TENANT_ID=$(echo "$TENANTS" | jq -r --arg name "$TENANT_NAME" '.data[] | select(.tenantName==$name) | .tenantConfig | fromjson | .tenantId')
+  
+  if [ -z "$TENANT_ID" ]; then
+    echo "Error: No tenant found with name: $TENANT_NAME"
+    exit 1
+  else
+    if $DEBUG; then
+      echo "Found tenant ID: $TENANT_ID for tenant name: $TENANT_NAME"
+    else
+      echo "$TENANT_ID"
+    fi
+  fi
+}
+
 # Main
 DEBUG=false
 if [ "$1" = "--debug" ]; then
@@ -709,6 +736,14 @@ case "$1" in
     exit 1
   fi
   ingest_data "$2" "$3" "$4"
+  ;;
+
+"get-tenant-id")
+  if [ $# -ne 2 ]; then
+    echo "Error: get-tenant-id requires tenant name"
+    exit 1
+  fi
+  get_tenant_id "$2"
   ;;
 
 "help")
