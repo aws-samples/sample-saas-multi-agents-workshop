@@ -138,38 +138,43 @@ def lambda_handler(event, context):
     knowledge_base_id = authorizer['knowledge_base_id']
     tenant_name = authorizer['tenant_name']
     tenant_id = authorizer.get('tenant_id', tenant_name)
+
+    logger.info(f"input tenant name: {tenant_name} and its tenant_id: {tenant_id}")
+    # TODO: Lab2 - uncomment below and hardcode a tenant id
+    # tenant_id = "<hardcode tenant id>"
+    # logger.info(f"hard coded tenant id: {c}")
     
-    logger.info(f"Processing request for tenant: {tenant_name}, knowledge_base_id: {knowledge_base_id}")
+    logger.info(f"Processing request for tenant: {tenant_name}, tenant_id: {tenant_id}")
     
     # Validate the request body
     if 'body' not in event:
         raise ValidationError('No query provided')
         
-        # Extract the query from the event
-        query = event['body']
-        
-        # Log the body content
-        logger.debug("Received query:", query)
-        
-        session = boto3.Session(
-            aws_access_key_id = aws_access_key_id,
-            aws_secret_access_key = aws_secret_access_key,
-            aws_session_token = aws_session_token
-        )
-        
-        # Initialize the Bedrock config
-        bedrock_config = Config(connect_timeout=120, read_timeout=120, retries={'max_attempts': 0})
-        
-        # Use agentcore runtime instead of retrieveAndGenerate
-        logger.info(f"Invoking agentcore runtime with tenant_id: {tenant_id}")
-        response = invoke_agentcore_runtime(session, query, tenant_id, event)
-        
-        logger.info(f"AgentCore runtime response for tenant {tenant_id}: {response}")
-        
-	    # Return the results
-        return {
-            'statusCode': 200,
-            'body': json.dumps(response)
-        }
+    # Extract the query from the event
+    query = event['body']
+    
+    # Log the body content
+    logger.debug("Received query:", query)
+    
+    session = boto3.Session(
+        aws_access_key_id = aws_access_key_id,
+        aws_secret_access_key = aws_secret_access_key,
+        aws_session_token = aws_session_token
+    )
+    
+    # Initialize the Bedrock config
+    bedrock_config = Config(connect_timeout=120, read_timeout=120, retries={'max_attempts': 0})
+    
+    # Use agentcore runtime instead of retrieveAndGenerate
+    logger.info(f"Invoking agentcore runtime with tenant_id: {tenant_id}")
+    response = invoke_agentcore_runtime(session, query, tenant_id, event)
+    
+    logger.info(f"AgentCore runtime response for tenant {tenant_id}: {response}")
+    
+    # Return the results
+    return {
+        'statusCode': 200,
+        'body': json.dumps(response)
+    }
     
     # The handle_error decorator will catch any exceptions and format the response

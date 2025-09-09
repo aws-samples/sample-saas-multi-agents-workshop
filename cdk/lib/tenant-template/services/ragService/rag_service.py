@@ -92,11 +92,12 @@ def lambda_handler(event, context):
         aws_secret_access_key = event['requestContext']['authorizer']['aws_secret_access_key']
         aws_session_token = event['requestContext']['authorizer']['aws_session_token']    
         knowledge_base_id = event['requestContext']['authorizer']['knowledge_base_id']
+        tenant_id = event['requestContext']['authorizer']['tenant_id']
         tenant_name = event['requestContext']['authorizer']['tenant_name']
-        logger.info(f"input tenant name: {tenant_name} and its knowledge_base_id: {knowledge_base_id}")
-    	# TODO: Lab2 - uncomment below and hardcode an knowledge base id
-        # knowledge_base_id = "<hardcode knowledge base id>"
-        # logger.info(f"hard coded knowledge base id: {knowledge_base_id}")
+        logger.info(f"input tenant name: {tenant_name} and its tenant_id: {tenant_id}")
+    	# TODO: Lab2 - uncomment below and hardcode a tenant id
+        # tenant_id = "<hardcode tenant id>"
+        # logger.info(f"hard coded tenant id: {tenant_id}")
         
         
         if 'body' not in event:
