@@ -2,6 +2,7 @@
 !jest.config.js
 *.d.ts
 node_modules
+agents/
 assets/
 zip_assets.sh
 README-resolution-endpoints.md

@@ -101,11 +101,15 @@ export class BedrockKnowledgeBase extends Construct {
     
     const stack = Stack.of(this);
     const naming = new ResourceNaming(stack);
+
+    // Create the bucket name using the same naming convention
+    const vectorBucketName = props.vectorBucketName || naming.bucketName('kb-vectors');
+    const vectorIndexName = props.vectorIndexName || `kb-embeddings-index-${stack.account}`;
     
     // Create vector bucket
     this.vectorBucket = new S3VectorBucketResource(this, 'VectorBucket', {
-      bucketName: props.vectorBucketName || naming.bucketName('kb-vectors'),
-      indexName: props.vectorIndexName || `kb-embeddings-index-${stack.account}`,
+      bucketName: vectorBucketName,
+      indexName: vectorIndexName,
       dimension: props.dimension || 1024,
       distanceMetric: props.distanceMetric || 'cosine',
       dataType: props.dataType || 'float32',
@@ -119,7 +123,7 @@ export class BedrockKnowledgeBase extends Construct {
       description: props.description || 'Knowledge base for custom data source',
       roleArn: props.roleArn,
       embeddingModelArn: Config.getEmbeddingModelArn(stack.region),
-      indexArn: `arn:aws:s3vectors:${stack.region}:${stack.account}:bucket/kb-vectors-${stack.account}/index/kb-embeddings-index-${stack.account}`,
+      indexArn: `arn:aws:s3vectors:${stack.region}:${stack.account}:bucket/${vectorBucketName}/index/${vectorIndexName}`,
       lambdaLayer: props.lambdaLayer,
     });
     
