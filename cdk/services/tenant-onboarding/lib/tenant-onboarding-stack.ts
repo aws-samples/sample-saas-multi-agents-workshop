@@ -19,7 +19,6 @@ export class TenantOnboardingStack extends Stack {
     const tenantId = new CfnParameter(this, 'TenantId', {});
     const companyName = new CfnParameter(this, 'CompanyName', {});
     const tenantAdminEmail = new CfnParameter(this, 'TenantAdminEmail', {});
-    const appDistributionId = new CfnParameter(this, 'AppDistributionId', {});
     const roleArn = new CfnParameter(this, 'RoleArn', {});
 
     // Removed custom domain, distribution domain, and Cognito URL handling as they're no longer needed

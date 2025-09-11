@@ -15,8 +15,6 @@ export interface TenantOnboardingProps {
 
   readonly applicationServiceBuildProjectNames: string[];
 
-  readonly appSiteDistributionId: string;
-  readonly appSiteCloudFrontDomain: string;
   readonly appSiteCustomDomain?: string;
   readonly appSiteHostedZoneId?: string;
 }
@@ -38,8 +36,6 @@ export class TenantOnboarding extends Construct {
       TenantId: '$TENANT_ID',
       CompanyName: '"$COMPANY_NAME"',
       TenantAdminEmail: '"$ADMIN_EMAIL"',
-      AppDistributionId: `"${props.appSiteDistributionId}"`,
-      DistributionDomain: `"${props.appSiteCloudFrontDomain}"`,
       RoleArn: `"${props.codebuildRole.roleArn}"`,
     };
 
@@ -165,27 +161,6 @@ export class TenantOnboarding extends Construct {
           'codebuild:StartBuild',
         ],
         resources: ['*'],
-        effect: iam.Effect.ALLOW,
-      })
-    );
-    projectRole.addToPrincipalPolicy(
-      new iam.PolicyStatement({
-        actions: [
-          'cloudfront:AssociateAlias',
-          'cloudfront:GetDistribution',
-          'cloudfront:GetDistributionConfig',
-          'cloudfront:UpdateDistribution',
-        ],
-        resources: [
-          Arn.format(
-            {
-              service: 'cloudfront',
-              resource: 'distribution',
-              resourceName: props.appSiteDistributionId,
-            },
-            Stack.of(this)
-          ),
-        ],
         effect: iam.Effect.ALLOW,
       })
     );

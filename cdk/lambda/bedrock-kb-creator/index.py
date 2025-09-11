@@ -52,10 +52,28 @@ def handler(event, context):
             
         elif request_type == 'Update':
             logger.info(f"Updating Bedrock Knowledge Base: {physical_id}")
-            return {
-                'Status': 'SUCCESS',
-                'PhysicalResourceId': physical_id
-            }
+            
+            # Get the knowledge base details to return the same attributes
+            try:
+                kb_details = bedrock_agent.get_knowledge_base(knowledgeBaseId=physical_id)
+                kb_id = physical_id
+                
+                data = {
+                    'KnowledgeBaseId': kb_id,
+                    'KnowledgeBaseArn': kb_details['knowledgeBase']['knowledgeBaseArn']
+                }
+                
+                return {
+                    'Status': 'SUCCESS',
+                    'PhysicalResourceId': kb_id,
+                    'Data': data
+                }
+            except Exception as e:
+                logger.error(f"Error getting knowledge base details during update: {str(e)}")
+                return {
+                    'Status': 'SUCCESS',
+                    'PhysicalResourceId': physical_id
+                }
             
         elif request_type == 'Delete':
             # Use PhysicalResourceId as the Knowledge Base ID for deletion

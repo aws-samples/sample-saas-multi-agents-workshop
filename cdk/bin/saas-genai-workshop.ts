@@ -38,6 +38,4 @@ const commonResource = new CommonResourcesStack(app, 'saas-genai-workshop-common
 // Create the ServicesStack
 new ServicesStack(app, 'ServicesStack', {
   env,
-  appSiteDistributionId: 'dummy-distribution-id',
-  appSiteCloudFrontDomain: 'dummy-cloudfront-domain',
 });

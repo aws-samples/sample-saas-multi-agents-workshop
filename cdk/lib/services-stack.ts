@@ -6,8 +6,6 @@ import { TenantOnboarding } from './constructs/tenant-onboarding';
 
 export interface ServicesStackProps extends StackProps {
   readonly customDomain?: string;
-  readonly appSiteDistributionId?: string;
-  readonly appSiteCloudFrontDomain?: string;
 }
 
 export class ServicesStack extends Stack {
@@ -27,8 +25,6 @@ export class ServicesStack extends Stack {
       onboardingProjectName: 'TenantOnboardingProject',
       deletionProjectName: 'TenantDeletionProject',
       assetDirectory: path.join(__dirname, '..', 'services', 'tenant-onboarding'),
-      appSiteDistributionId: props.appSiteDistributionId || 'dummy-distribution-id',
-      appSiteCloudFrontDomain: props.appSiteCloudFrontDomain || 'dummy-cloudfront-domain',
       applicationServiceBuildProjectNames: [],
     });
   }
