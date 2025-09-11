@@ -187,6 +187,7 @@ export class CommonResourcesStack extends Stack {
       appClientID: app_client_id,
       userPoolID: userPoolID,
       s3Bucket: dataBucket,
+      logsBucket: logsBucket,
       tenantTokenUsageTable: tenantTokenUsage.tenantTokenUsageTable,
       restApi: api.restApi,
       controlPlaneApiGwUrl: props.controlPlaneApiGwUrl,

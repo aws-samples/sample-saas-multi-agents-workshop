@@ -29,6 +29,7 @@ help() {
   echo "  agent-resolution <user> <password> <query>"
   echo "  direct-resolution <user> <password> <query>"
   echo "  ingest-data <user> <password> <file_location>"
+  echo "  ingest-logs <user> <password> <file_location>"
   echo "  help"
 }
 
@@ -586,6 +587,48 @@ ingest_data() {
   echo $RESPONSE
 }
 
+ingest_logs() {
+  USER="$1"
+  PASSWORD="$2"
+  FILE_LOCATION="$3"
+
+  if $DEBUG; then
+    echo "Ingesting Logs: $FILE_LOCATION"
+  fi
+
+  STACK_NAME="saas-genai-workshop-common-resources"
+  APP_CLIENT_ID_OUTPUT_PARAM_NAME="UserPoolClientId"
+  API_GATEWAY_URL_OUTPUT_PARAM_NAME="ApiGatewayUrl"
+
+  export SAAS_APP_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='$APP_CLIENT_ID_OUTPUT_PARAM_NAME'].OutputValue" --output text)
+  export API_GATEWAY_URL=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='$API_GATEWAY_URL_OUTPUT_PARAM_NAME'].OutputValue" --output text)
+
+  AUTHENTICATION_RESULT=$(aws cognito-idp initiate-auth \
+    --auth-flow USER_PASSWORD_AUTH \
+    --client-id "${SAAS_APP_CLIENT_ID}" \
+    --auth-parameters "USERNAME='${USER}',PASSWORD='${PASSWORD}'" \
+    --query 'AuthenticationResult')
+
+  ACCESS_TOKEN=$(echo "$AUTHENTICATION_RESULT" | jq -r '.AccessToken')
+  ID_TOKEN=$(echo "$AUTHENTICATION_RESULT" | jq -r '.IdToken')
+
+  if $DEBUG; then
+    echo "API GATEWAY URL: $API_GATEWAY_URL"
+    echo "File location: $FILE_LOCATION"
+  fi
+
+  TENANT_DATA=$(jq -n --arg content "$(cat "$FILE_LOCATION")" '{"fileContent": $content}')
+
+  RESPONSE=$(curl --request POST \
+    --url "${API_GATEWAY_URL}upload-logs" \
+    --header "Authorization: Bearer ${ID_TOKEN}" \
+    --header 'content-type: application/json' \
+    --data "$TENANT_DATA" \
+    --silent)
+
+  echo $RESPONSE
+}
+
 get_tenant_id() {
   source_config
   TENANT_NAME="$1"
@@ -736,6 +779,14 @@ case "$1" in
     exit 1
   fi
   ingest_data "$2" "$3" "$4"
+  ;;
+
+"ingest-logs")
+  if [ $# -ne 4 ]; then
+    echo "Error: ingest-logs requires user, password, and file location"
+    exit 1
+  fi
+  ingest_logs "$2" "$3" "$4"
   ;;
 
 "get-tenant-id")

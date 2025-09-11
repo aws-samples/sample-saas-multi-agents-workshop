@@ -36,6 +36,7 @@ export interface ServicesProps {
   readonly appClientID: string;
   readonly userPoolID: string;
   readonly s3Bucket: Bucket;
+  readonly logsBucket: Bucket; // Added for logs upload
   readonly tenantTokenUsageTable?: TableV2; // Made optional
   readonly restApi: RestApi;
   readonly controlPlaneApiGwUrl: string;
@@ -46,6 +47,7 @@ export interface ServicesProps {
 export class Services extends Construct {
   public readonly agentCoreService: Function;
   public readonly s3UploaderService: Function;
+  public readonly s3LogsUploaderService: Function; // Added for logs upload
   public readonly triggerDataIngestionService: Function;
   public readonly getJWTTokenService: Function;
   public readonly authorizerService: Function;
@@ -59,6 +61,7 @@ export class Services extends Construct {
     const agentResolution = props.restApi.root.addResource("agent-resolution");
     const resolution = props.restApi.root.addResource("resolution");
     const s3Upload = props.restApi.root.addResource("upload");
+    const s3LogsUpload = props.restApi.root.addResource("upload-logs");
 
     // *****************
     // Authorizer Lambda
@@ -372,6 +375,47 @@ export class Services extends Construct {
     s3Upload.addMethod(
       "POST",
       new LambdaIntegration(this.s3UploaderService, { proxy: true }),
+      {
+        authorizer: authorizer,
+        authorizationType: apigw.AuthorizationType.CUSTOM,
+      }
+    );
+
+    // S3 Logs Uploader lambda
+    const s3LogsUploaderExecRole = new Role(this, "S3LogsUploaderExecRole", {
+      assumedBy: new ServicePrincipal("lambda.amazonaws.com"),
+      managedPolicies: [
+        ManagedPolicy.fromAwsManagedPolicyName(
+          "CloudWatchLambdaInsightsExecutionRolePolicy"
+        ),
+        ManagedPolicy.fromAwsManagedPolicyName(
+          "service-role/AWSLambdaBasicExecutionRole"
+        ),
+      ],
+    });
+
+    const s3LogsUploader = new python.PythonFunction(this, "S3LogsUploader", {
+      functionName: "s3LogsUploader",
+      entry: path.join(__dirname, "services/s3LogsUploader/"),
+      runtime: Runtime.PYTHON_3_12,
+      architecture: Architecture.ARM_64,
+      index: "s3logsuploader.py",
+      handler: "lambda_handler",
+      timeout: Duration.seconds(60),
+      role: s3LogsUploaderExecRole,
+      layers: [props.lambdaPowerToolsLayer],
+      bundling: {
+        platform: "linux/arm64",
+      },
+      environment: {
+        S3_BUCKET_NAME: props.logsBucket.bucketName,
+      },
+    });
+
+    this.s3LogsUploaderService = s3LogsUploader;
+    s3LogsUpload.addMethod(
+      "POST",
+      new LambdaIntegration(this.s3LogsUploaderService, { proxy: true }),
       {
         authorizer: authorizer,
         authorizationType: apigw.AuthorizationType.CUSTOM,
