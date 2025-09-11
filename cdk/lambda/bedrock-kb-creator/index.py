@@ -145,7 +145,15 @@ def create_knowledge_base(bedrock_agent, s3vectors_client, name, description, ro
             existing_kb = find_knowledge_base_by_name(bedrock_agent, name)
             if existing_kb:
                 logger.info(f"Knowledge base with name '{name}' already exists")
-                return {'knowledgeBase': existing_kb}
+                kb_id = existing_kb['knowledgeBaseId']
+                return {
+                    'Status': 'SUCCESS',
+                    'PhysicalResourceId': kb_id,
+                    'Data': {
+                        'KnowledgeBaseId': kb_id,
+                        'KnowledgeBaseArn': existing_kb['knowledgeBaseArn']
+                    }
+                }
         except Exception as find_error:
             logger.warning(f"Error checking for existing knowledge base: {str(find_error)}")
         
@@ -182,7 +190,15 @@ def create_knowledge_base(bedrock_agent, s3vectors_client, name, description, ro
                 existing_kb = find_knowledge_base_by_name(bedrock_agent, name)
                 if existing_kb:
                     logger.info(f"Found existing knowledge base with name '{name}'")
-                    return {'knowledgeBase': existing_kb}
+                    kb_id = existing_kb['knowledgeBaseId']
+                    return {
+                        'Status': 'SUCCESS',
+                        'PhysicalResourceId': kb_id,
+                        'Data': {
+                            'KnowledgeBaseId': kb_id,
+                            'KnowledgeBaseArn': existing_kb['knowledgeBaseArn']
+                        }
+                    }
             except Exception as find_error:
                 logger.error(f"Error finding existing knowledge base: {str(find_error)}")
         
