@@ -73,7 +73,7 @@ def lambda_handler(event, context):
         return authorizer_layer.create_auth_denied_policy(method_arn)
     else:
         tenant_id = response["custom:tenantId"]
-        response_url = urllib.request.Request(control_plane_gw_url + f'tenant-config?tenantId={tenant_id}')
+        response_url = control_plane_gw_url + f'tenant-config?tenantId={tenant_id}'
         if is_safe_url(response_url):
             response_data = requests.get(response_url).content
         else:
