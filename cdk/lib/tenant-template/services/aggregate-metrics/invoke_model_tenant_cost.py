@@ -91,7 +91,7 @@ class InvokeModelTenantCost():
         for row in result['ResultSet']['Rows'][1:]:
             line_item = row['Data'][0]['VarCharValue']
             cost = Decimal(row['Data'][1]['VarCharValue'])
-            # TODO: Lab4 - Get total input and output tokens cost
+            # TODO: Lab3 - Get total input and output tokens cost
             
             
             
