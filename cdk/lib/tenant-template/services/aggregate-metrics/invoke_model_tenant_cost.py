@@ -94,8 +94,6 @@ class InvokeModelTenantCost():
             # TODO: Lab3 - Get total input and output tokens cost
             
             
-            
-            
         logger.info(total_service_cost_dict)
 
         

@@ -30,7 +30,7 @@ export class ResourceNaming {
    * @returns Formatted bucket name
    */
   public bucketName(resourceName: string): string {
-    return `${this.prefix}-${resourceName}-${this.stack.account}`;
+    return `${this.prefix}-${resourceName}-${this.stack.account}-${this.stack.region}`;
   }
   
   /**
