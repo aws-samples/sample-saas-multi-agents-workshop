@@ -176,6 +176,8 @@ export class Services extends Construct {
               resources: [
                 `arn:aws:s3:::${props.s3Bucket.bucketName}` +
                   "/${aws:PrincipalTag/TenantId}/*",
+                `arn:aws:s3:::${props.logsBucket.bucketName}` +
+                  "/${aws:PrincipalTag/TenantId}/*",
               ],
             }),
             new PolicyStatement({

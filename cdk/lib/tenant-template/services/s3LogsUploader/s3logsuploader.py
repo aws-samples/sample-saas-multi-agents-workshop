@@ -5,7 +5,6 @@ import uuid
 from aws_lambda_powertools import Logger
 
 logger = Logger()
-s3_client = boto3.client('s3')
 S3_BUCKET_NAME = os.environ['S3_BUCKET_NAME']
 
 @logger.inject_lambda_context
@@ -14,7 +13,10 @@ def lambda_handler(event, context):
     
     try:
         # Extract tenant ID from requestContext
-        tenant_id = event['requestContext']['authorizer']['tenantId']
+        tenant_id = event['requestContext']['authorizer']['principalId']
+        aws_access_key_id = event['requestContext']['authorizer']['aws_access_key_id']
+        aws_secret_access_key = event['requestContext']['authorizer']['aws_secret_access_key']
+        aws_session_token = event['requestContext']['authorizer']['aws_session_token']
         
         # Parse the request body
         body = json.loads(event['body'])
@@ -28,12 +30,21 @@ def lambda_handler(event, context):
         
         # Generate a unique file name
         file_name = f"{uuid.uuid4()}.log"
-        
+
         # Define the S3 key (path) - organize logs by tenant
-        s3_key = f"{tenant_id}/logs/{file_name}"
+        s3_key = f"{tenant_id}/{file_name}"
+
+        session = boto3.Session(
+            aws_access_key_id = aws_access_key_id,
+            aws_secret_access_key = aws_secret_access_key,
+            aws_session_token = aws_session_token
+        )
+    
+        # Initialize S3 client
+        s3 = session.client('s3')
         
         # Upload the file to S3
-        s3_client.put_object(
+        s3.put_object(
             Bucket=S3_BUCKET_NAME,
             Key=s3_key,
             Body=file_content
