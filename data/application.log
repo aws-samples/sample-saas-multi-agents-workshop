@@ -1,0 +1,73 @@
+2025-09-12T08:15:23.123Z [INFO] AppService - Application startup complete
+2025-09-12T08:15:23.456Z [DEBUG] ConfigLoader - Loading configuration from /etc/app/config.json
+2025-09-12T08:15:24.789Z [INFO] DatabaseService - Successfully connected to database
+2025-09-12T08:15:25.012Z [DEBUG] AuthService - Initializing authentication providers
+2025-09-12T08:15:25.345Z [INFO] CacheService - Redis cache initialized with 1000 max entries
+2025-09-12T08:15:26.678Z [DEBUG] RequestFilter - Setting up request filters and middleware
+2025-09-12T08:15:27.901Z [INFO] APIGateway - API Gateway listening on port 8080
+2025-09-12T08:15:28.234Z [DEBUG] MetricsCollector - Starting metrics collection service
+2025-09-12T08:16:12.345Z [INFO] UserService - User login successful: user_id=12345
+2025-09-12T08:16:45.678Z [DEBUG] SessionManager - Created new session: session_id=a1b2c3d4
+2025-09-12T08:17:23.901Z [INFO] DataProcessor - Processing batch job #4567 started
+2025-09-12T08:17:56.234Z [DEBUG] FileService - Reading file from S3: bucket=app-data, key=reports/daily/20250912.csv
+2025-09-12T08:18:12.567Z [WARN] DatabaseService - Slow query detected: execution_time=2.5s, query_id=q-78901
+2025-09-12T08:18:45.890Z [INFO] NotificationService - Sent 15 push notifications to user group 'admin'
+2025-09-12T08:19:23.123Z [DEBUG] CacheService - Cache hit ratio: 0.87
+2025-09-12T08:20:12.456Z [INFO] ReportGenerator - Daily report generation started
+2025-09-12T08:21:34.789Z [DEBUG] DataTransformer - Transforming data format from JSON to XML
+2025-09-12T08:22:45.012Z [ERROR] APIGateway - Rate limit exceeded for client IP: 192.168.1.105
+2025-09-12T08:23:12.345Z [INFO] BackupService - Scheduled backup started: type=incremental
+2025-09-12T08:24:23.678Z [DEBUG] NetworkMonitor - Network latency: 45ms to primary datacenter
+2025-09-12T08:25:34.901Z [WARN] SecurityService - Multiple failed login attempts detected for username: admin
+2025-09-12T08:26:45.234Z [INFO] TaskScheduler - Scheduled 25 background tasks for execution
+2025-09-12T08:27:56.567Z [DEBUG] MemoryManager - Current memory usage: 1.2GB (60% of allocated)
+2025-09-12T08:28:12.890Z [ERROR] FileService - Failed to write to file: /var/log/app/audit.log - Permission denied
+2025-09-12T08:29:23.123Z [INFO] UserService - New user registered: user_id=12346
+2025-09-12T08:30:34.456Z [DEBUG] ValidationService - Input validation complete for form: registration
+2025-09-12T08:31:45.789Z [WARN] DatabaseService - Connection pool reaching capacity: 85% utilized
+2025-09-12T08:32:56.012Z [INFO] EmailService - Sent weekly newsletter to 1250 subscribers
+2025-09-12T08:33:12.345Z [DEBUG] RenderEngine - Template rendering completed in 125ms
+2025-09-12T08:34:23.678Z [CRITICAL] MonitoringService - System disk space critically low: 2% remaining
+2025-09-12T08:35:34.901Z [INFO] BackgroundWorker - Processed 500 items in job queue
+2025-09-12T08:36:45.234Z [DEBUG] ConfigService - Reloading configuration due to file change
+2025-09-12T08:37:56.567Z [WARN] CacheService - Cache eviction rate high: 15% in last minute
+2025-09-12T08:38:12.890Z [INFO] APIGateway - Received 1500 requests in last 5 minutes
+2025-09-12T08:39:23.123Z [DEBUG] AuthService - Token validation successful for user_id=12345
+2025-09-12T08:40:34.456Z [ERROR] DatabaseService - Query failed: ERROR 1205 (HY000): Lock wait timeout exceeded
+2025-09-12T08:41:45.789Z [INFO] NotificationService - Push notification delivery rate: 98.5%
+2025-09-12T08:42:56.012Z [DEBUG] MetricsCollector - Collected 250 data points for system metrics
+2025-09-12T08:43:12.345Z [WARN] NetworkService - Network packet loss detected: 2.5% to secondary datacenter
+2025-09-12T08:44:23.678Z [INFO] SearchService - Search index rebuild completed in 45s
+2025-09-12T08:45:34.901Z [DEBUG] UIController - Rendered dashboard view in 350ms
+2025-09-12T08:46:45.234Z [CRITICAL] SecurityService - Potential security breach detected: unusual access pattern from IP 203.0.113.42
+2025-09-12T08:47:56.567Z [INFO] TaskScheduler - Completed 20 of 25 scheduled background tasks
+2025-09-12T08:48:12.890Z [DEBUG] LogRotationService - Log rotation complete: archived 15 log files
+2025-09-12T08:49:23.123Z [WARN] MemoryManager - Memory usage spike detected: 85% utilization
+2025-09-12T08:50:34.456Z [INFO] UserService - User profile updated: user_id=12345
+2025-09-12T08:51:45.789Z [DEBUG] FileService - File compression ratio: 0.65 for log archives
+2025-09-12T08:52:56.012Z [ERROR] APIGateway - Endpoint /api/v2/reports/generate returned 500 Internal Server Error
+2025-09-12T08:53:12.345Z [INFO] DatabaseService - Database optimization completed: freed 500MB
+2025-09-12T08:54:23.678Z [DEBUG] SessionManager - Expired 150 inactive sessions
+2025-09-12T08:55:34.901Z [WARN] ConfigService - Configuration value 'max_connections' is deprecated
+2025-09-12T08:56:45.234Z [INFO] EmailService - Email delivery success rate: 99.2%
+2025-09-12T08:57:56.567Z [DEBUG] CacheService - Cache invalidation triggered for user profiles
+2025-09-12T08:58:12.890Z [ERROR] BackgroundWorker - Job failed after 3 retries: job_id=bg-78901
+2025-09-12T08:59:23.123Z [INFO] MetricsCollector - Daily metrics report generated
+2025-09-12T09:00:34.456Z [DEBUG] AuthService - OAuth token refresh for user_id=12346
+2025-09-12T09:01:45.789Z [CRITICAL] MonitoringService - Database connection failure: primary database unreachable
+2025-09-12T09:02:56.012Z [INFO] FailoverService - Automatic failover to secondary database initiated
+2025-09-12T09:03:12.345Z [DEBUG] NetworkMonitor - Network route changed to secondary datacenter
+2025-09-12T09:04:23.678Z [WARN] SecurityService - SSL certificate expiring in 15 days
+2025-09-12T09:05:34.901Z [INFO] NotificationService - Alert sent to on-call engineer: pager_id=oncall-123
+2025-09-12T09:06:45.234Z [DEBUG] DatabaseService - Read replicas synchronized with new primary
+2025-09-12T09:07:56.567Z [ERROR] FileService - Insufficient disk space for scheduled backup
+2025-09-12T09:08:12.890Z [INFO] MonitoringService - System status changed to: DEGRADED
+2025-09-12T09:09:23.123Z [DEBUG] LoggingService - Log level temporarily increased to DEBUG for troubleshooting
+2025-09-12T09:10:34.456Z [WARN] APIGateway - High latency detected on API endpoints: avg_response=1.2s
+2025-09-12T09:11:45.789Z [CRITICAL] SecurityService - Brute force attack detected on authentication endpoint
+2025-09-12T09:12:56.012Z [INFO] FirewallService - IP address 203.0.113.42 automatically blocked
+2025-09-12T09:13:12.345Z [DEBUG] MetricsCollector - Incident metrics collection started: incident_id=inc-12345
+2025-09-12T09:14:23.678Z [INFO] FailoverService - Primary database connection restored
+2025-09-12T09:15:34.901Z [DEBUG] DatabaseService - Reconnecting application services to primary database
+2025-09-12T09:16:45.234Z [WARN] CacheService - Cache coherence issues detected after failover
+2025-09-12T09:17:56.567Z [INFO] MonitoringService - System status changed to: OPERATIONAL
