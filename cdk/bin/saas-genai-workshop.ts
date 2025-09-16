@@ -4,10 +4,10 @@
 import "source-map-support/register";
 import * as cdk from "aws-cdk-lib";
 import { ControlPlaneStack } from "../lib/control-plane-stack";
-import { AppPlaneStack } from '../lib/app-plane-stack';
-import { CommonResourcesStack } from '../lib/tenant-template/common-resources-stack';
-import { ServicesStack } from '../lib/services-stack';
-
+import { AppPlaneStack } from "../lib/app-plane-stack";
+import { CommonResourcesStack } from "../lib/tenant-template/common-resources-stack";
+import { ServicesStack } from "../lib/services-stack";
+import { AgentCoreStack } from "../lib/agentcore-stack";
 
 const env = {
   account: process.env.AWS_ACCOUNT,
@@ -24,18 +24,26 @@ const controlPlaneStack = new ControlPlaneStack(app, "ControlPlaneStack", {
   crossRegionReferences: true, // Enable cross-region references
 });
 
-new AppPlaneStack(app, 'ApplicationPlane', {
+new AppPlaneStack(app, "ApplicationPlane", {
   env,
   eventBusArn: controlPlaneStack.eventBusArn,
 });
 
-const commonResource = new CommonResourcesStack(app, 'saas-genai-workshop-common-resources', {
-  env, // Use the same environment as ControlPlaneStack
-  crossRegionReferences: true, // Enable cross-region references
-  controlPlaneApiGwUrl: controlPlaneStack.controlPlaneUrl,
-});
+const commonResource = new CommonResourcesStack(
+  app,
+  "saas-genai-workshop-common-resources",
+  {
+    env, // Use the same environment as ControlPlaneStack
+    crossRegionReferences: true, // Enable cross-region references
+    controlPlaneApiGwUrl: controlPlaneStack.controlPlaneUrl,
+  }
+);
 
 // Create the ServicesStack
-new ServicesStack(app, 'ServicesStack', {
+new ServicesStack(app, "ServicesStack", {
+  env,
+});
+
+new AgentCoreStack(app, "AgentCoreStack", {
   env,
 });
