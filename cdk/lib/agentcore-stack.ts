@@ -13,13 +13,6 @@ export class AgentCoreStack extends cdk.Stack {
     // Create the user pool
     const userPool = this.createUserPool();
 
-    // Create domain for OAuth2 endpoints
-    const userPoolDomain = userPool.addDomain("UserPoolDomain", {
-      cognitoDomain: {
-        domainPrefix: `agentcore-${this.account}-${cdk.Stack.of(this).region}`,
-      },
-    });
-
     // We're creating one resource server for both gateways
     const resourceServerInfo = this.createResourceServer(
       userPool,
@@ -35,10 +28,16 @@ export class AgentCoreStack extends cdk.Stack {
 
     // Create IAM role for AgentCore Gateway
     const agentCoreRole = this.createAgentCoreRole();
+    logMcpLambda.grantInvoke(agentCoreRole);
+    kbMcpLambda.grantInvoke(agentCoreRole);
 
     // Create CloudWatch log groups for gateway logs
     const logGatewayLogGroup = this.createGatewayLogGroup("LogGateway");
-    const kbGatewayLogGroup = this.createGatewayLogGroup("KnowledgeBaseGateway");
+    const kbGatewayLogGroup = this.createGatewayLogGroup(
+      "KnowledgeBaseGateway"
+    );
+    logGatewayLogGroup.grantWrite(agentCoreRole);
+    kbGatewayLogGroup.grantWrite(agentCoreRole);
 
     // Add outputs
     new cdk.CfnOutput(this, "UserPoolId", {
@@ -127,7 +126,7 @@ export class AgentCoreStack extends cdk.Stack {
   }
 
   private createUserPool(): cognito.UserPool {
-    return new cognito.UserPool(this, "UserPool", {
+    const pool = new cognito.UserPool(this, "UserPool", {
       userPoolName: "agentcore-user-pool",
       selfSignUpEnabled: true,
       signInAliases: {
@@ -153,6 +152,14 @@ export class AgentCoreStack extends cdk.Stack {
       },
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
+
+    pool.addDomain("UserPoolDomain", {
+      cognitoDomain: {
+        domainPrefix: `agentcore-${this.account}-${cdk.Stack.of(this).region}`,
+      },
+    });
+
+    return pool;
   }
 
   private createUserClient(userPool: cognito.UserPool): cognito.UserPoolClient {
@@ -208,13 +215,35 @@ export class AgentCoreStack extends cdk.Stack {
   }
 
   private createAgentCoreRole(): iam.Role {
-    return new iam.Role(this, "AgentCoreRole", {
+    const role = new iam.Role(this, "AgentCoreRole", {
       roleName: "AgentCoreGatewayRole",
       assumedBy: new iam.ServicePrincipal("bedrock-agentcore.amazonaws.com"),
-      managedPolicies: [
-        iam.ManagedPolicy.fromAwsManagedPolicyName("AdministratorAccess"),
-      ],
+      inlinePolicies: {
+        AgentCoreGatewayPolicy: new iam.PolicyDocument({
+          statements: [
+            new iam.PolicyStatement({
+              actions: [
+                "logs:CreateLogStream",
+                "logs:DescribeLogStreams",
+                "logs:DescribeLogGroups",
+                "logs:CreateLogGroup",
+              ],
+              resources: ["*"],
+            }),
+            new iam.PolicyStatement({
+              actions: [
+                "ecr:GetDownloadUrlForLayer",
+                "ecr:GetAuthorizationToken",
+                "ecr:BatchGetImage",
+              ],
+              resources: ["*"],
+            }),
+          ],
+        }),
+      },
     });
+
+    return role;
   }
 
   private createGatewayLogGroup(gatewayName: string): logs.LogGroup {
