@@ -1,0 +1,35 @@
+default_agent: ops_agent
+agents:
+  ops_agent:
+    name: ops_agent
+    entrypoint: /Users/fredscho/Code/saas-multi-agents-workshop/agent/main.py
+    platform: linux/arm64
+    container_runtime: docker
+    aws:
+      execution_role: arn:aws:iam::592872546055:role/AmazonBedrockAgentCoreSDKRuntime-us-east-1-62edfbac6d
+      execution_role_auto_create: false
+      account: '592872546055'
+      region: us-east-1
+      ecr_repository: 592872546055.dkr.ecr.us-east-1.amazonaws.com/bedrock-agentcore-ops_agent
+      ecr_auto_create: false
+      network_configuration:
+        network_mode: PUBLIC
+      protocol_configuration:
+        server_protocol: HTTP
+      observability:
+        enabled: true
+    bedrock_agentcore:
+      agent_id: null
+      agent_arn: null
+      agent_session_id: null
+    codebuild:
+      project_name: bedrock-agentcore-ops_agent-builder
+      execution_role: arn:aws:iam::592872546055:role/AmazonBedrockAgentCoreSDKCodeBuild-us-east-1-62edfbac6d
+      source_bucket: bedrock-agentcore-codebuild-sources-592872546055-us-east-1
+    authorizer_configuration:
+      customJWTAuthorizer:
+        discoveryUrl: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_tGqoy4hlw/.well-known/openid-configuration
+        allowedClients:
+        - 4ic0j0qoopp97rinmddle99t8r
+        - 1jihk66sfvmi9qlelgdeh9o14b
+    oauth_configuration: null
