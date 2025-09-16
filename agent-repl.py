@@ -11,8 +11,13 @@ import getpass
 import argparse
 import logging
 import time
+from rich.console import Console
+from rich.markdown import Markdown
+from rich.live import Live
+from rich.panel import Panel
 
 logger = logging.getLogger(__name__)
+console = Console()
 
 
 def get_stack_outputs():
@@ -164,16 +169,44 @@ def invoke_agent_with_streaming(
 
             # Handle streaming response
             if "text/event-stream" in content_type:
-                for line in response.iter_lines():
-                    if line:
-                        line = line.decode("utf-8")
-                        if line.startswith("data: "):
-                            data = line[6:]  # Remove "data: " prefix
-                            if data.strip() and data != "[DONE]":
-                                # Remove quotes and convert \n to actual newlines
-                                clean_data = data.strip().strip('"').replace('\\n', '\n')
-                                print(clean_data, end="", flush=True)
-                print()  # Final newline
+                content = ""
+
+                with Live(
+                    Panel("Thinking...", title="Agent Response", title_align="right"),
+                    console=console,
+                    refresh_per_second=4,
+                ) as live:
+                    for line in response.iter_lines():
+                        if line:
+                            line = line.decode("utf-8")
+                            if line.startswith("data: "):
+                                data = line[6:]  # Remove "data: " prefix
+                                if data.strip() and data != "[DONE]":
+                                    # Remove quotes and convert \n to actual newlines
+                                    clean_data = (
+                                        data.strip().strip('"').replace("\\n", "\n")
+                                    )
+                                    content += clean_data
+                                    # Update with raw streaming text
+                                    live.update(
+                                        Panel(
+                                            content,
+                                            title="Agent Response",
+                                            title_align="right",
+                                        )
+                                    )
+
+                    # When done, replace with formatted markdown
+                    if content.strip():
+                        live.update(
+                            Panel(
+                                Markdown(content),
+                                title="Agent Response",
+                                title_align="right",
+                            )
+                        )
+
+                print()  # Add space after response
 
             else:
                 # Handle non-streaming response
@@ -233,7 +266,7 @@ def main():
         sys.exit(1)
 
     print(f"Connected to agent: {agent_arn}")
-    print("Type 'quit' or 'exit' to quit\n")
+    print("Type '/quit' or '/exit' to quit, '/clear' to force a new session\n")
 
     session_id = str(uuid.uuid4())
     logger.debug(f"Session ID: {session_id}")
@@ -244,6 +277,11 @@ def main():
 
             if prompt.lower() in ["/quit", "/exit"]:
                 break
+
+            if prompt.lower() in ["/clear"]:
+                session_id = str(uuid.uuid4())
+                print(f"\n\n\n\n\nSession ID: {session_id}")
+                continue
 
             if not prompt:
                 continue
