@@ -13,17 +13,16 @@ log.level = logging.DEBUG
 
 @tool(name="query_kb", description="This tool allows you to query a knowledgebase")
 def kb_agent_tool(query: str) -> str:
-    """Use this tool to make up logs in JSON format for debugging purposes."""
     access_token = ops_context.OpsContext.get_gateway_token_ctx()
 
     # Get gateway URL from environment variable
-    log_gateway_url = os.environ.get("KB_GATEWAY_URL")
-    if not log_gateway_url:
+    kb_gateway_url = os.environ.get("KB_GATEWAY_URL")
+    if not kb_gateway_url:
         raise ValueError("KB_GATEWAY_URL environment variable is not set")
 
     streamable_http_mcp_client = MCPClient(
         lambda: streamablehttp_client(
-            log_gateway_url,
+            kb_gateway_url,
             headers={
                 "Authorization": f"Bearer {access_token}",
             },
@@ -33,7 +32,8 @@ def kb_agent_tool(query: str) -> str:
     with streamable_http_mcp_client:
         kb_agent = Agent(
             name="kb_agent",
-            system_prompt=f"You are an agent that searches a Knowledgebase for ops-related code.",
+            system_prompt=f"You are an agent that searches a Knowledgebase.",
+            tools=streamable_http_mcp_client.list_tools_sync(),
             model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
         )
 
