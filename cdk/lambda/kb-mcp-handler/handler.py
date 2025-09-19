@@ -1,0 +1,49 @@
+# lambda_kb_tool/handler.py
+import os, json, re, boto3
+from typing import Any, Dict, List
+
+REGION = os.getenv("AWS_REGION", "us-east-1")
+KB_ID = os.getenv("BEDROCK_KB_ID")
+TOP_K = int(os.getenv("KB_TOP_K", "8"))
+
+bedrock_rt = boto3.client("bedrock-agent-runtime", region_name=REGION)
+
+def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    # Expected payload: {"tenant_id":"...", "query":"...", "top_k":8}
+    tenant_id = event.get("tenant_id", "")
+    query = event.get("query", "").strip()
+    if not query:
+        return {"status":"error","message":"query required"}
+    top_k = int(event.get("top_k", TOP_K))
+
+    resp = bedrock_rt.retrieve(
+        knowledgeBaseId=KB_ID,
+        retrievalQuery={"text": query},
+        retrievalConfiguration={
+            "vectorSearchConfiguration": {"numberOfResults": top_k},
+            "metadataConfiguration": {
+                "type": "EQUALS",
+                "key": "tenant_id",
+                "value": tenant_id
+            }
+        },
+    )
+    formatted_results = []
+    for i, r in enumerate(resp.get("retrievalResults", []), 1):
+        content = r.get("content", {}).get("text", "")
+        score = r.get("score", 0)
+        source = r.get("location", {}).get("s3Location", {}).get("uri", "Unknown")
+        
+        formatted_results.append(f"""Result {i} (Score: {score:.3f}):
+Source: {source}
+Content: {content}
+---""")
+    
+    knowledge_summary = "\n\n".join(formatted_results) if formatted_results else "No relevant knowledge found."
+    
+    return {
+        "status": "success", 
+        "tenant_id": tenant_id, 
+        "knowledge_base_results": knowledge_summary,
+        "result_count": len(formatted_results)
+    }

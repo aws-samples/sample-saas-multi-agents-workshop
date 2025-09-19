@@ -44,6 +44,15 @@ new ServicesStack(app, "ServicesStack", {
   env,
 });
 
+// new AgentCoreStack(app, "AgentCoreStack", {
+//   env,
+//   kbId: commonResource.node.tryGetContext('KnowledgeBaseId') || 'EOB1EVNAAC',
+//   s3BucketName: commonResource.node.tryGetContext('DataBucketName') || 's3://saas-logs-bucket-822849401905',
+// });
+
 new AgentCoreStack(app, "AgentCoreStack", {
   env,
+  kbId: 'EOB1EVNAAC',
+  s3BucketName: 'saas-logs-bucket-822849401905',
+  athenaResultsBucketName: `athena-query-results-${env.account || '822849401905'}`,
 });

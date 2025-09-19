@@ -2,16 +2,44 @@ import * as cdk from "aws-cdk-lib";
 import * as cognito from "aws-cdk-lib/aws-cognito";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as logs from "aws-cdk-lib/aws-logs";
+import * as s3 from "aws-cdk-lib/aws-s3";
+import * as glue from "aws-cdk-lib/aws-glue";
+import * as cr from "aws-cdk-lib/custom-resources";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import * as path from "path";
 import { Construct } from "constructs";
+import * as lambda from "aws-cdk-lib/aws-lambda";
+
+export interface AgentCoreStackProps extends cdk.StackProps {
+  kbId: string;
+  s3BucketName: string;
+  athenaResultsBucketName: string;
+}
 
 export class AgentCoreStack extends cdk.Stack {
-  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+  // Athena constants
+  private readonly ATHENA_DB = "saas_logs_db";
+  private readonly ATHENA_TABLE = "tenant_logs";
+  private readonly ATHENA_WORKGROUP = "primary";
+
+  constructor(scope: Construct, id: string, props: AgentCoreStackProps) {
     super(scope, id, props);
+
+    // Import existing S3 bucket
+    const logsBucket = s3.Bucket.fromBucketName(this, "LogsBucket", props.s3BucketName);
+
+    // Import existing Athena results bucket
+    const athenaResultsBucket = s3.Bucket.fromBucketName(this, "AthenaResultsBucket", props.athenaResultsBucketName);
+
+    // Create Athena database and table if they don't exist
+    this.createAthenaResources(props.s3BucketName);    
 
     // Create the user pool
     const userPool = this.createUserPool();
+
+    // Use the props
+    const kbId = props.kbId;
+    const s3BucketName = props.s3BucketName;
 
     // We're creating one resource server for both gateways
     const resourceServerInfo = this.createResourceServer(
@@ -23,8 +51,8 @@ export class AgentCoreStack extends cdk.Stack {
     const userClient = this.createUserClient(userPool);
     const m2mClient = this.createM2MClient({ userPool, ...resourceServerInfo });
 
-    const logMcpLambda = this.createLogMcpHandlerLambda();
-    const kbMcpLambda = this.createKbMcpHandlerLambda();
+    const logMcpLambda = this.createLogMcpHandlerLambda(s3BucketName, props.athenaResultsBucketName);
+    const kbMcpLambda = this.createKbMcpHandlerLambda(kbId);
 
     // Create IAM role for AgentCore Gateway
     const agentCoreRole = this.createAgentCoreRole();
@@ -79,31 +107,219 @@ export class AgentCoreStack extends cdk.Stack {
       value: agentCoreRole.roleArn,
       description: "The ARN of the AgentCore Gateway IAM Role",
     });
+
+    new cdk.CfnOutput(this, "AthenaResultsBucketName", {
+      value: athenaResultsBucket.bucketName,
+      description: "The name of the Athena results bucket",
+    });    
   }
 
-  private createLogMcpHandlerLambda() {
-    return new NodejsFunction(this, "LogMcpHandler", {
-      entry: path.join(__dirname, "../lambda/log-mcp-handler/index.ts"),
-      functionName: "AgentCore-LogMcpHandler",
-      description: "Lambda function handler for the log MCP server",
-      runtime: cdk.aws_lambda.Runtime.NODEJS_22_X,
-      bundling: {
-        externalModules: ["aws-sdk"],
-      },
-    });
-  }
 
-  private createKbMcpHandlerLambda() {
-    return new NodejsFunction(this, "KbMcpHandler", {
-      entry: path.join(__dirname, "../lambda/kb-mcp-handler/index.ts"),
-      functionName: "AgentCore-KbMcpHandler",
-      description: "Lambda function handler for the KB MCP server",
-      runtime: cdk.aws_lambda.Runtime.NODEJS_22_X,
-      bundling: {
-        externalModules: ["aws-sdk"],
+
+  private createAthenaResources(s3BucketName: string) {
+    // Create database with custom resource to handle existing
+    new cr.AwsCustomResource(this, "CreateDatabase", {
+      onCreate: {
+        service: "Glue",
+        action: "createDatabase",
+        parameters: {
+          DatabaseInput: {
+            Name: this.ATHENA_DB,
+            Description: "Database for SaaS logs analysis",
+          },
+        },
+        physicalResourceId: cr.PhysicalResourceId.of(this.ATHENA_DB),
+        ignoreErrorCodesMatching: "AlreadyExistsException",
       },
+      policy: cr.AwsCustomResourcePolicy.fromSdkCalls({
+        resources: cr.AwsCustomResourcePolicy.ANY_RESOURCE,
+      }),
     });
-  }
+
+    // Create table with custom resource to handle existing
+    new cr.AwsCustomResource(this, "CreateTable", {
+      onCreate: {
+        service: "Glue",
+        action: "createTable",
+        parameters: {
+          DatabaseName: this.ATHENA_DB,
+          TableInput: {
+            Name: this.ATHENA_TABLE,
+            Description: "Table for tenant logs",
+            TableType: "EXTERNAL_TABLE",
+            Parameters: {
+              classification: "json",
+              typeOfData: "file",
+            },
+            StorageDescriptor: {
+              Columns: [
+                { Name: "timestamp", Type: "string" },
+                { Name: "level", Type: "string" },
+                { Name: "tenant", Type: "string" },
+                { Name: "environment", Type: "string" },
+                { Name: "component", Type: "string" },
+                { Name: "correlation_id", Type: "string" },
+                { Name: "request_id", Type: "string" },
+                { Name: "event", Type: "string" },
+                { Name: "path", Type: "string" },
+                { Name: "job", Type: "string" },
+                { Name: "status", Type: "string" },
+                { Name: "entity_id", Type: "string" },
+                { Name: "detail", Type: "string" },
+              ],
+              Location: `s3://${s3BucketName}/`,
+              InputFormat: "org.apache.hadoop.mapred.TextInputFormat",
+              OutputFormat: "org.apache.hadoop.hive.ql.io.IgnoreKeyTextOutputFormat",
+              SerdeInfo: {
+                SerializationLibrary: "org.openx.data.jsonserde.JsonSerDe",
+                Parameters: {
+                  "ignore.malformed.json": "true",
+                },
+              },
+            },
+          },
+        },
+        physicalResourceId: cr.PhysicalResourceId.of(`${this.ATHENA_DB}.${this.ATHENA_TABLE}`),
+        ignoreErrorCodesMatching: "AlreadyExistsException",
+      },
+      policy: cr.AwsCustomResourcePolicy.fromSdkCalls({
+        resources: cr.AwsCustomResourcePolicy.ANY_RESOURCE,
+      }),
+    });
+  }  
+
+
+private createLogMcpHandlerLambda(s3BucketName: string, athenaResultsBucketName: string) {
+  const role = new iam.Role(this, "LogMcpHandlerRole", {
+    assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
+    managedPolicies: [
+      iam.ManagedPolicy.fromAwsManagedPolicyName("service-role/AWSLambdaBasicExecutionRole")
+    ],
+    inlinePolicies: {
+      AthenaQueryAccess: new iam.PolicyDocument({
+        statements: [
+          new iam.PolicyStatement({
+            actions: [
+              "kms:Decrypt",
+              "kms:DescribeKey",
+              "kms:GenerateDataKey*",
+              "kms:Encrypt",
+              "kms:ReEncrypt*"
+            ],
+            resources: ["*"]
+          }),
+          new iam.PolicyStatement({
+            actions: [
+              "athena:StartQueryExecution",
+              "athena:GetQueryExecution",
+              "athena:GetQueryResults",
+              "athena:StopQueryExecution",
+              "athena:GetWorkGroup"
+            ],
+            resources: [`arn:aws:athena:${this.region}:${this.account}:workgroup/${this.ATHENA_WORKGROUP}`]
+          }),
+          new iam.PolicyStatement({
+            actions: [
+              "glue:GetDatabase",
+              "glue:GetDatabases",
+              "glue:GetTable",
+              "glue:GetTables",
+              "glue:GetPartition",
+              "glue:GetPartitions",
+              "glue:BatchGetPartition"
+            ],
+            resources: [
+              `arn:aws:glue:${this.region}:${this.account}:catalog`,
+              `arn:aws:glue:${this.region}:${this.account}:database/${this.ATHENA_DB}`,
+              `arn:aws:glue:${this.region}:${this.account}:table/${this.ATHENA_DB}/${this.ATHENA_TABLE}`
+            ]
+          }),
+          new iam.PolicyStatement({
+            actions: [
+              "s3:GetBucketLocation",
+              "s3:ListBucket"
+            ],
+            resources: [
+              `arn:aws:s3:::${athenaResultsBucketName}`,
+              `arn:aws:s3:::${s3BucketName}`
+            ]
+          }),
+          new iam.PolicyStatement({
+            actions: [
+              "s3:PutObject",
+              "s3:GetObject",
+              "s3:AbortMultipartUpload",
+              "s3:ListMultipartUploadParts"
+            ],
+            resources: [
+              `arn:aws:s3:::${athenaResultsBucketName}/*`,
+              `arn:aws:s3:::${s3BucketName}/*`
+            ]
+          })
+        ]
+      })
+    }
+  });
+
+  return new lambda.Function(this, "LogMcpHandler", {
+    functionName: "AgentCore-LogMcpHandler",
+    description: "Lambda function handler for the log MCP server with Athena query capabilities",
+    runtime: lambda.Runtime.PYTHON_3_12,
+    handler: "handler.handler",
+    code: lambda.Code.fromAsset(path.join(__dirname, "../lambda/log-mcp-handler")),
+    role: role,
+    timeout: cdk.Duration.seconds(60),
+    memorySize: 512,
+    environment: {
+      ATHENA_DATABASE: this.ATHENA_DB,
+      ATHENA_TABLE: this.ATHENA_TABLE,
+      ATHENA_WORKGROUP: this.ATHENA_WORKGROUP,
+      ATHENA_OUTPUT: `s3://${athenaResultsBucketName}/athena-output/`
+    }
+  });
+}
+
+private createKbMcpHandlerLambda(kbId: string) {
+  const kbRole = new iam.Role(this, "KbMcpHandlerRole", {
+    assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
+    managedPolicies: [
+      iam.ManagedPolicy.fromAwsManagedPolicyName("service-role/AWSLambdaBasicExecutionRole")
+    ],
+    inlinePolicies: {
+      BedrockKnowledgeBasePolicy: new iam.PolicyDocument({
+        statements: [
+          new iam.PolicyStatement({
+            actions: ["bedrock:Retrieve"],
+            resources: [`arn:aws:bedrock:${this.region}:${this.account}:knowledge-base/${kbId}`]
+          }),
+          new iam.PolicyStatement({
+            actions: [
+              "kms:Decrypt",
+              "kms:DescribeKey", 
+              "kms:GenerateDataKey*",
+              "kms:Encrypt",
+              "kms:ReEncrypt*"
+            ],
+            resources: ["*"]
+          })
+        ]
+      })
+    }
+  });
+
+  return new lambda.Function(this, "KbMcpHandler", {
+    functionName: "AgentCore-KbMcpHandler",
+    description: "Lambda function handler for the KB MCP server",
+    runtime: lambda.Runtime.PYTHON_3_12,
+    handler: "handler.handler",
+    code: lambda.Code.fromAsset(path.join(__dirname, "../lambda/kb-mcp-handler")),
+    role: kbRole,
+    environment: {
+      BEDROCK_KB_ID: kbId,
+      KB_TOP_K: "8"
+    }
+  });
+}
 
   private createResourceServer(
     userPool: cdk.aws_cognito.UserPool,
@@ -221,22 +437,158 @@ export class AgentCoreStack extends cdk.Stack {
       inlinePolicies: {
         AgentCoreGatewayPolicy: new iam.PolicyDocument({
           statements: [
+            // ECR Image Access
+            new iam.PolicyStatement({
+              sid: "ECRImageAccess",
+              actions: [
+                "ecr:BatchGetImage",
+                "ecr:GetDownloadUrlForLayer",
+              ],
+              resources: [`arn:aws:ecr:${this.region}:${this.account}:repository/*`],
+            }),
+            // ECR Token Access
+            new iam.PolicyStatement({
+              sid: "ECRTokenAccess",
+              actions: ["ecr:GetAuthorizationToken"],
+              resources: ["*"],
+            }),
+            // CloudWatch Logs
             new iam.PolicyStatement({
               actions: [
-                "logs:CreateLogStream",
                 "logs:DescribeLogStreams",
-                "logs:DescribeLogGroups",
                 "logs:CreateLogGroup",
               ],
-              resources: ["*"],
+              resources: [
+                `arn:aws:logs:${this.region}:${this.account}:log-group:/aws/bedrock-agentcore/runtimes/*`,
+              ],
+            }),
+            new iam.PolicyStatement({
+              actions: ["logs:DescribeLogGroups"],
+              resources: [
+                `arn:aws:logs:${this.region}:${this.account}:log-group:*`,
+              ],
             }),
             new iam.PolicyStatement({
               actions: [
-                "ecr:GetDownloadUrlForLayer",
-                "ecr:GetAuthorizationToken",
-                "ecr:BatchGetImage",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+              ],
+              resources: [
+                `arn:aws:logs:${this.region}:${this.account}:log-group:/aws/bedrock-agentcore/runtimes/*:log-stream:*`,
+              ],
+            }),
+            // X-Ray
+            new iam.PolicyStatement({
+              actions: [
+                "xray:PutTraceSegments",
+                "xray:PutTelemetryRecords",
+                "xray:GetSamplingRules",
+                "xray:GetSamplingTargets",
               ],
               resources: ["*"],
+            }),
+            // CloudWatch Metrics
+            new iam.PolicyStatement({
+              actions: ["cloudwatch:PutMetricData"],
+              resources: ["*"],
+              conditions: {
+                StringEquals: {
+                  "cloudwatch:namespace": "bedrock-agentcore",
+                },
+              },
+            }),
+            // Bedrock AgentCore Runtime
+            new iam.PolicyStatement({
+              sid: "BedrockAgentCoreRuntime",
+              actions: ["bedrock-agentcore:InvokeAgentRuntime"],
+              resources: [
+                `arn:aws:bedrock-agentcore:${this.region}:${this.account}:runtime/*`,
+              ],
+            }),
+            // Bedrock AgentCore Memory Create
+            new iam.PolicyStatement({
+              sid: "BedrockAgentCoreMemoryCreateMemory",
+              actions: ["bedrock-agentcore:CreateMemory"],
+              resources: ["*"],
+            }),
+            // Bedrock AgentCore Memory
+            new iam.PolicyStatement({
+              sid: "BedrockAgentCoreMemory",
+              actions: [
+                "bedrock-agentcore:CreateEvent",
+                "bedrock-agentcore:GetEvent",
+                "bedrock-agentcore:GetMemory",
+                "bedrock-agentcore:GetMemoryRecord",
+                "bedrock-agentcore:ListActors",
+                "bedrock-agentcore:ListEvents",
+                "bedrock-agentcore:ListMemoryRecords",
+                "bedrock-agentcore:ListSessions",
+                "bedrock-agentcore:DeleteEvent",
+                "bedrock-agentcore:DeleteMemoryRecord",
+                "bedrock-agentcore:RetrieveMemoryRecords",
+              ],
+              resources: [
+                `arn:aws:bedrock-agentcore:${this.region}:${this.account}:memory/*`,
+              ],
+            }),
+            // Bedrock AgentCore Identity API Key
+            new iam.PolicyStatement({
+              sid: "BedrockAgentCoreIdentityGetResourceApiKey",
+              actions: ["bedrock-agentcore:GetResourceApiKey"],
+              resources: [
+                `arn:aws:bedrock-agentcore:${this.region}:${this.account}:token-vault/default`,
+                `arn:aws:bedrock-agentcore:${this.region}:${this.account}:token-vault/default/apikeycredentialprovider/*`,
+                `arn:aws:bedrock-agentcore:${this.region}:${this.account}:workload-identity-directory/default`,
+                `arn:aws:bedrock-agentcore:${this.region}:${this.account}:workload-identity-directory/default/workload-identity/ops_agent-*`,
+              ],
+            }),
+            // Bedrock AgentCore Identity OAuth2
+            new iam.PolicyStatement({
+              sid: "BedrockAgentCoreIdentityGetResourceOauth2Token",
+              actions: ["bedrock-agentcore:GetResourceOauth2Token"],
+              resources: [
+                `arn:aws:bedrock-agentcore:${this.region}:${this.account}:token-vault/default`,
+                `arn:aws:bedrock-agentcore:${this.region}:${this.account}:token-vault/default/oauth2credentialprovider/*`,
+                `arn:aws:bedrock-agentcore:${this.region}:${this.account}:workload-identity-directory/default`,
+                `arn:aws:bedrock-agentcore:${this.region}:${this.account}:workload-identity-directory/default/workload-identity/ops_agent-*`,
+              ],
+            }),
+            // Bedrock AgentCore Workload Access Token
+            new iam.PolicyStatement({
+              sid: "BedrockAgentCoreIdentityGetWorkloadAccessToken",
+              actions: [
+                "bedrock-agentcore:GetWorkloadAccessToken",
+                "bedrock-agentcore:GetWorkloadAccessTokenForJWT",
+                "bedrock-agentcore:GetWorkloadAccessTokenForUserId",
+              ],
+              resources: [
+                `arn:aws:bedrock-agentcore:${this.region}:${this.account}:workload-identity-directory/default`,
+                `arn:aws:bedrock-agentcore:${this.region}:${this.account}:workload-identity-directory/default/workload-identity/ops_agent-*`,
+              ],
+            }),
+            // Bedrock Model Invocation
+            new iam.PolicyStatement({
+              sid: "BedrockModelInvocation",
+              actions: [
+                "bedrock:InvokeModel",
+                "bedrock:InvokeModelWithResponseStream",
+                "bedrock:ApplyGuardrail",
+              ],
+              resources: [
+                "arn:aws:bedrock:*::foundation-model/*",
+                `arn:aws:bedrock:${this.region}:${this.account}:*`,
+              ],
+            }),
+            // Secrets Manager Access
+            new iam.PolicyStatement({
+              sid: "SecretsManagerAccess",
+              actions: [
+                "secretsmanager:GetSecretValue",
+                "secretsmanager:DescribeSecret",
+              ],
+              resources: [
+                `arn:aws:secretsmanager:${this.region}:${this.account}:secret:*`,
+              ],
             }),
           ],
         }),

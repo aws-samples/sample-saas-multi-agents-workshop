@@ -16,7 +16,7 @@ async def on_auth_url(url: str):
 
 
 @requires_access_token(
-    provider_name="cognito-m2m-provider",
+    provider_name="cognito-m2m36109-provider",
     scopes=["AgentCore-Gateway/invoke"],
     auth_flow="M2M",
     on_auth_url=on_auth_url,  # prints authorization URL to console

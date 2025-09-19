@@ -6,6 +6,8 @@ import boto3
 import logging
 import argparse
 import yaml
+import random
+import time
 from contextlib import contextmanager
 from bedrock_agentcore.services.identity import IdentityClient
 from bedrock_agentcore_starter_toolkit import Runtime
@@ -249,6 +251,25 @@ def create_kb_mcp_server(
     return gateway_id
 
 
+def update_access_token_file(provider_name):
+    """Update access_token.py with the new provider name"""
+    access_token_file = "../agent/access_token.py"
+    
+    with open(access_token_file, "r") as f:
+        content = f.read()
+    
+    # Replace the provider name in the decorator
+    updated_content = content.replace(
+        'provider_name="cognito-m2m-provider"',
+        f'provider_name="{provider_name}"'
+    )
+    
+    with open(access_token_file, "w") as f:
+        f.write(updated_content)
+    
+    logger.info(f"Updated access_token.py with provider name: {provider_name}")
+
+
 def create_m2m_outbound_identity(
     m2m_client_id, m2m_client_secret, discovery_url, region, recreate=False
 ):
@@ -259,9 +280,12 @@ def create_m2m_outbound_identity(
 
     try:
         identity_client = IdentityClient(region=region)
+        random_suffix = ''.join([str(random.randint(0, 9)) for _ in range(5)])
+        provider_name = f"cognito-m2m{random_suffix}-provider"
+        
         identity_client.create_oauth2_credential_provider(
             req={
-                "name": "cognito-m2m-provider",
+                "name": provider_name,
                 "credentialProviderVendor": "CustomOauth2",
                 "oauth2ProviderConfigInput": {
                     "customOauth2ProviderConfig": {
@@ -272,12 +296,17 @@ def create_m2m_outbound_identity(
                 },
             }
         )
+        
+        # Update access_token.py with the new provider name
+        update_access_token_file(provider_name)
+        
+        return provider_name
     except Exception as e:
         if "already exists" not in str(e):
             raise
 
 
-def update_agent_runtime_with_gateways(log_gateway_id, kb_gateway_id, region):
+def update_agent_runtime_with_gateways(log_gateway_id, kb_gateway_id, region, role_arn):
     logger.info("Updating agent runtime with gateway URLs")
     try:
         # Get agent runtime info
@@ -307,7 +336,7 @@ def update_agent_runtime_with_gateways(log_gateway_id, kb_gateway_id, region):
         agentcore.update_agent_runtime(
             agentRuntimeId=runtime_id,
             agentRuntimeArtifact=runtime_details["agentRuntimeArtifact"],
-            roleArn=runtime_details["roleArn"],
+            roleArn=role_arn,
             networkConfiguration=runtime_details["networkConfiguration"],
             protocolConfiguration=runtime_details.get("protocolConfiguration"),
             authorizerConfiguration=runtime_details.get("authorizerConfiguration"),
@@ -332,6 +361,7 @@ def create_agentcore_runtime(
     log_gateway_id,
     kb_gateway_id,
     region,
+    role_arn,
     recreate=False,
 ):
     logger.info("3: Creating AgentCore Runtime")
@@ -339,7 +369,7 @@ def create_agentcore_runtime(
     if recreate:
         destroy_agentcore_runtime()
         # Clear agent-specific config to force fresh creation
-        config_file = "./agent/.bedrock_agentcore.yaml"
+        config_file = "../agent/.bedrock_agentcore.yaml"
         if os.path.exists(config_file):
             with open(config_file, "r") as f:
                 config = yaml.safe_load(f)
@@ -357,7 +387,7 @@ def create_agentcore_runtime(
 
     agentcore_runtime = Runtime()
 
-    with change_dir("./agent/"):
+    with change_dir("../agent/"):
         agentcore_runtime.configure(
             entrypoint="main.py",
             auto_create_execution_role=True,
@@ -378,7 +408,7 @@ def create_agentcore_runtime(
         logger.info(f"Agent ARN: {launch_result.agent_arn}")
 
         # Update runtime with gateway URLs
-        update_agent_runtime_with_gateways(log_gateway_id, kb_gateway_id, region)
+        update_agent_runtime_with_gateways(log_gateway_id, kb_gateway_id, region, role_arn)
 
 
 @contextmanager
@@ -462,6 +492,7 @@ def main():
         log_gateway_id,
         kb_gateway_id,
         region,
+        role_arn,
         True,
     )
 

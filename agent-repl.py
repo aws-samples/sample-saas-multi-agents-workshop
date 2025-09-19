@@ -38,6 +38,16 @@ def get_agent_arn():
         for runtime in runtimes:
             if "ops_agent" in runtime["agentRuntimeArn"]:
                 logger.debug(f"Found agent: {runtime['agentRuntimeArn']}")
+
+                # Get runtime details
+                # response = agentcore.describe_agent_runtime(
+                #      agentRuntimeArn=runtime['agentRuntimeArn']
+                # )
+
+                # The role ARN will be in the response
+                # execution_role_arn = response['roleArn']
+                # print(f"Execution Role ARN: {execution_role_arn}")
+
                 return runtime["agentRuntimeArn"]
     except Exception as e:
         logger.debug(f"Error finding agent: {e}")
