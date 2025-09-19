@@ -7,7 +7,6 @@ import { ControlPlaneStack } from "../lib/control-plane-stack";
 import { AppPlaneStack } from "../lib/app-plane-stack";
 import { CommonResourcesStack } from "../lib/tenant-template/common-resources-stack";
 import { ServicesStack } from "../lib/services-stack";
-import { AgentCoreStack } from "../lib/agentcore-stack";
 
 const env = {
   account: process.env.AWS_ACCOUNT,
@@ -44,15 +43,5 @@ new ServicesStack(app, "ServicesStack", {
   env,
 });
 
-// new AgentCoreStack(app, "AgentCoreStack", {
-//   env,
-//   kbId: commonResource.node.tryGetContext('KnowledgeBaseId') || 'EOB1EVNAAC',
-//   s3BucketName: commonResource.node.tryGetContext('DataBucketName') || 's3://saas-logs-bucket-822849401905',
-// });
-
-new AgentCoreStack(app, "AgentCoreStack", {
-  env,
-  kbId: 'EOB1EVNAAC',
-  s3BucketName: 'saas-logs-bucket-822849401905',
-  athenaResultsBucketName: `athena-query-results-${env.account || '822849401905'}`,
-});
+// AthenaStack and AgentCoreStack are now created as substacks within CommonResourcesStack
+// This eliminates the cyclic dependency issue by creating resources in the proper order

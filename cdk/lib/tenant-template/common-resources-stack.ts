@@ -18,6 +18,8 @@ import { BucketFactory } from '../constructs/bucket-factory';
 import { Config } from '../config';
 import { ResourceNaming } from '../naming';
 import { BedrockKnowledgeBase } from '../constructs/bedrock-kb';
+import { AthenaStack } from '../athena-stack';
+import { AgentCoreStack } from '../agentcore-stack';
 
 interface CommonResourcesStackProps extends StackProps {
   readonly controlPlaneApiGwUrl: string;
@@ -25,9 +27,15 @@ interface CommonResourcesStackProps extends StackProps {
 }
 
 export class CommonResourcesStack extends Stack {
+  public readonly knowledgeBase: BedrockKnowledgeBase;
+  public readonly logsBucket: Bucket;
+  public readonly identityProvider: IdentityProvider;
+  public readonly athenaStack: AthenaStack;
+  public readonly agentCoreStack: AgentCoreStack;
+
   constructor(
-    scope: Construct, 
-    id: string, 
+    scope: Construct,
+    id: string,
     props: CommonResourcesStackProps
   ) {
     super(scope, id, props);
@@ -144,7 +152,7 @@ export class CommonResourcesStack extends Stack {
     );
 
     // Create Bedrock Knowledge Base (handles dependencies internally)
-    const knowledgeBase = new BedrockKnowledgeBase(this, 'BedrockKnowledgeBase', {
+    this.knowledgeBase = new BedrockKnowledgeBase(this, 'BedrockKnowledgeBase', {
       knowledgeBaseName: naming.knowledgeBaseName('data'),
       description: 'Knowledge base for custom data source',
       roleArn: bedrockRole.roleArn,
@@ -154,8 +162,12 @@ export class CommonResourcesStack extends Stack {
       vectorIndexName: `kb-embeddings-index-${this.account}`,
     });
     
-    const knowledgeBaseId = knowledgeBase.knowledgeBaseId;
-    const knowledgeBaseArn = knowledgeBase.knowledgeBaseArn;
+    const knowledgeBaseId = this.knowledgeBase.knowledgeBaseId;
+    const knowledgeBaseArn = this.knowledgeBase.knowledgeBaseArn;
+
+    // Store references for external access
+    this.logsBucket = logsBucket;
+    this.identityProvider = identityProvider;
 
     const sourceCodeS3Bucket = BucketFactory.createStandardBucket(
       this,
@@ -312,12 +324,12 @@ export class CommonResourcesStack extends Stack {
     });
 
     new CfnOutput(this, "KnowledgeBaseId", {
-      value: knowledgeBase.knowledgeBaseId,
+      value: this.knowledgeBase.knowledgeBaseId,
       description: "The ID of the Bedrock Knowledge Base"
     });
     
     new CfnOutput(this, "DataSourceId", {
-      value: knowledgeBase.dataSource.attrDataSourceId,
+      value: this.knowledgeBase.dataSource.attrDataSourceId,
       description: "The ID of the Bedrock Knowledge Base Data Source"
     });
     
@@ -337,6 +349,78 @@ export class CommonResourcesStack extends Stack {
     new CfnOutput(this, "SaaSGenAIWorkshopTriggerIngestionLambdaArn", {
       value: services.triggerDataIngestionService.functionArn,
       description: "The ARN of the Lambda function to trigger ingestion"
+    });
+
+    // Create Athena stack as a substack - this depends on logsBucket which is already created above
+    this.athenaStack = new AthenaStack(this, "AthenaStack", {
+      s3BucketName: logsBucket.bucketName,
+    });
+
+    // Create AgentCore stack as a substack - this depends on both logsBucket and athenaStack
+    this.agentCoreStack = new AgentCoreStack(this, "AgentCoreStack", {
+      kbId: this.knowledgeBase.knowledgeBaseId,
+      s3BucketName: logsBucket.bucketName,
+      athenaResultsBucketName: this.athenaStack.athenaResultsBucket.bucketName,
+      userPool: identityProvider.tenantUserPool,
+      athenaDatabase: this.athenaStack.ATHENA_DB,
+      athenaTable: this.athenaStack.ATHENA_TABLE,
+      athenaWorkgroup: this.athenaStack.ATHENA_WORKGROUP,
+    });
+
+    // Add outputs for AgentCore stack resources
+    new CfnOutput(this, "AgentCoreRoleArn", {
+      value: this.agentCoreStack.agentCoreRoleArn,
+      description: "The ARN of the AgentCore IAM role"
+    });
+
+    new CfnOutput(this, "AgentCoreUserPoolId", {
+      value: this.agentCoreStack.userPoolId,
+      description: "The ID of the User Pool"
+    });
+
+    new CfnOutput(this, "AgentCoreUserClientId", {
+      value: this.agentCoreStack.userClientId,
+      description: "The ID of the User Client"
+    });
+
+    new CfnOutput(this, "AgentCoreM2MClientId", {
+      value: this.agentCoreStack.m2mClientId,
+      description: "The ID of the M2M Client"
+    });
+
+    new CfnOutput(this, "AgentCoreM2MClientSecret", {
+      value: this.agentCoreStack.m2mClientSecret,
+      description: "The Secret of the M2M Client"
+    });
+
+    new CfnOutput(this, "AgentCoreLogMcpLambdaArn", {
+      value: this.agentCoreStack.logMcpLambdaArn,
+      description: "The ARN of the Log MCP Lambda"
+    });
+
+    new CfnOutput(this, "AgentCoreKbMcpLambdaArn", {
+      value: this.agentCoreStack.kbMcpLambdaArn,
+      description: "The ARN of the KB MCP Lambda"
+    });
+
+    new CfnOutput(this, "AthenaDatabaseName", {
+      value: this.athenaStack.ATHENA_DB,
+      description: "The name of the Athena database"
+    });
+
+    new CfnOutput(this, "AthenaTableName", {
+      value: this.athenaStack.ATHENA_TABLE,
+      description: "The name of the Athena table"
+    });
+
+    new CfnOutput(this, "AthenaWorkgroupName", {
+      value: this.athenaStack.ATHENA_WORKGROUP,
+      description: "The name of the Athena workgroup"
+    });
+
+    new CfnOutput(this, "AthenaResultsBucketName", {
+      value: this.athenaStack.athenaResultsBucket.bucketName,
+      description: "The name of the Athena results bucket"
     });
     
   }

@@ -24,10 +24,64 @@ logger.propagate = False
 
 
 def get_stack_outputs():
+    """
+    Get stack outputs from environment variables passed by parent script.
+    Falls back to CloudFormation API if environment variables are not set.
+    """
+    # Try to get from environment variables first (preferred approach)
+    env_outputs = {
+        "UserPoolId": os.environ.get("USER_POOL_ID"),
+        "UserClientId": os.environ.get("USER_CLIENT_ID"),
+        "M2MClientId": os.environ.get("M2M_CLIENT_ID"),
+        "M2MClientSecret": os.environ.get("M2M_CLIENT_SECRET"),
+        "AgentCoreRoleArn": os.environ.get("AGENT_CORE_ROLE_ARN"),
+        "LogMcpLambdaArn": os.environ.get("LOG_MCP_LAMBDA_ARN"),
+        "KbMcpLambdaArn": os.environ.get("KB_MCP_LAMBDA_ARN"),
+    }
+    
+    # Check if all required environment variables are set
+    if all(value is not None for value in env_outputs.values()):
+        logger.info("Using parameters from environment variables")
+        return env_outputs
+    
+    # Fallback to CloudFormation API - try the nested stack first
+    logger.info("Environment variables not set, falling back to CloudFormation API")
     cf = boto3.client("cloudformation")
-    response = cf.describe_stacks(StackName="AgentCoreStack")
-    outputs = response["Stacks"][0]["Outputs"]
-    return {output["OutputKey"]: output["OutputValue"] for output in outputs}
+    
+    try:
+        # Try to get from the common resources stack first (new approach)
+        response = cf.describe_stacks(StackName="saas-genai-workshop-common-resources")
+        outputs = response["Stacks"][0]["Outputs"]
+        stack_outputs = {output["OutputKey"]: output["OutputValue"] for output in outputs}
+        
+        # Map the outputs to the expected keys
+        mapped_outputs = {}
+        for key, value in env_outputs.items():
+            # Try to find matching output key (may have different naming)
+            if key == "UserPoolId" and "TenantUserpoolId" in stack_outputs:
+                mapped_outputs[key] = stack_outputs["TenantUserpoolId"]
+            elif key == "UserClientId" and "UserPoolClientId" in stack_outputs:
+                mapped_outputs[key] = stack_outputs["UserPoolClientId"]
+            elif key in stack_outputs:
+                mapped_outputs[key] = stack_outputs[key]
+        
+        # Check if we got all required outputs
+        if len(mapped_outputs) == len(env_outputs):
+            logger.info("Using parameters from common resources stack")
+            return mapped_outputs
+            
+    except Exception as e:
+        logger.warning(f"Could not get outputs from common resources stack: {e}")
+    
+    try:
+        # Fallback to original AgentCoreStack (legacy approach)
+        response = cf.describe_stacks(StackName="AgentCoreStack")
+        outputs = response["Stacks"][0]["Outputs"]
+        logger.info("Using parameters from AgentCoreStack (legacy)")
+        return {output["OutputKey"]: output["OutputValue"] for output in outputs}
+    except Exception as e:
+        logger.error(f"Could not get outputs from any stack: {e}")
+        raise
 
 
 def destroy_gateway(name):

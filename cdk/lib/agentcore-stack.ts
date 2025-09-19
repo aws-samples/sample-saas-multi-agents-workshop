@@ -3,24 +3,28 @@ import * as cognito from "aws-cdk-lib/aws-cognito";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as s3 from "aws-cdk-lib/aws-s3";
-import * as glue from "aws-cdk-lib/aws-glue";
-import * as cr from "aws-cdk-lib/custom-resources";
-import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import * as path from "path";
 import { Construct } from "constructs";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 
-export interface AgentCoreStackProps extends cdk.StackProps {
+export interface AgentCoreStackProps extends cdk.NestedStackProps {
   kbId: string;
   s3BucketName: string;
   athenaResultsBucketName: string;
+  userPool: cognito.UserPool;
+  athenaDatabase: string;
+  athenaTable: string;
+  athenaWorkgroup: string;
 }
 
-export class AgentCoreStack extends cdk.Stack {
-  // Athena constants
-  private readonly ATHENA_DB = "saas_logs_db";
-  private readonly ATHENA_TABLE = "tenant_logs";
-  private readonly ATHENA_WORKGROUP = "primary";
+export class AgentCoreStack extends cdk.NestedStack {
+  public readonly userPoolId: string;
+  public readonly userClientId: string;
+  public readonly m2mClientId: string;
+  public readonly m2mClientSecret: string;
+  public readonly agentCoreRoleArn: string;
+  public readonly logMcpLambdaArn: string;
+  public readonly kbMcpLambdaArn: string;
 
   constructor(scope: Construct, id: string, props: AgentCoreStackProps) {
     super(scope, id, props);
@@ -31,11 +35,8 @@ export class AgentCoreStack extends cdk.Stack {
     // Import existing Athena results bucket
     const athenaResultsBucket = s3.Bucket.fromBucketName(this, "AthenaResultsBucket", props.athenaResultsBucketName);
 
-    // Create Athena database and table if they don't exist
-    this.createAthenaResources(props.s3BucketName);    
-
-    // Create the user pool
-    const userPool = this.createUserPool();
+    // Use the existing user pool from props
+    const userPool = props.userPool;
 
     // Use the props
     const kbId = props.kbId;
@@ -51,13 +52,22 @@ export class AgentCoreStack extends cdk.Stack {
     const userClient = this.createUserClient(userPool);
     const m2mClient = this.createM2MClient({ userPool, ...resourceServerInfo });
 
-    const logMcpLambda = this.createLogMcpHandlerLambda(s3BucketName, props.athenaResultsBucketName);
+    const logMcpLambda = this.createLogMcpHandlerLambda(s3BucketName, props.athenaResultsBucketName, props.athenaDatabase, props.athenaTable, props.athenaWorkgroup);
     const kbMcpLambda = this.createKbMcpHandlerLambda(kbId);
 
     // Create IAM role for AgentCore Gateway
     const agentCoreRole = this.createAgentCoreRole();
     logMcpLambda.grantInvoke(agentCoreRole);
     kbMcpLambda.grantInvoke(agentCoreRole);
+
+    // Store outputs as public properties
+    this.userPoolId = userPool.userPoolId;
+    this.userClientId = userClient.userPoolClientId;
+    this.m2mClientId = m2mClient.userPoolClientId;
+    this.m2mClientSecret = m2mClient.userPoolClientSecret.unsafeUnwrap();
+    this.agentCoreRoleArn = agentCoreRole.roleArn;
+    this.logMcpLambdaArn = logMcpLambda.functionArn;
+    this.kbMcpLambdaArn = kbMcpLambda.functionArn;
 
     // Create CloudWatch log groups for gateway logs
     const logGatewayLogGroup = this.createGatewayLogGroup("LogGateway");
@@ -114,82 +124,7 @@ export class AgentCoreStack extends cdk.Stack {
     });    
   }
 
-
-
-  private createAthenaResources(s3BucketName: string) {
-    // Create database with custom resource to handle existing
-    new cr.AwsCustomResource(this, "CreateDatabase", {
-      onCreate: {
-        service: "Glue",
-        action: "createDatabase",
-        parameters: {
-          DatabaseInput: {
-            Name: this.ATHENA_DB,
-            Description: "Database for SaaS logs analysis",
-          },
-        },
-        physicalResourceId: cr.PhysicalResourceId.of(this.ATHENA_DB),
-        ignoreErrorCodesMatching: "AlreadyExistsException",
-      },
-      policy: cr.AwsCustomResourcePolicy.fromSdkCalls({
-        resources: cr.AwsCustomResourcePolicy.ANY_RESOURCE,
-      }),
-    });
-
-    // Create table with custom resource to handle existing
-    new cr.AwsCustomResource(this, "CreateTable", {
-      onCreate: {
-        service: "Glue",
-        action: "createTable",
-        parameters: {
-          DatabaseName: this.ATHENA_DB,
-          TableInput: {
-            Name: this.ATHENA_TABLE,
-            Description: "Table for tenant logs",
-            TableType: "EXTERNAL_TABLE",
-            Parameters: {
-              classification: "json",
-              typeOfData: "file",
-            },
-            StorageDescriptor: {
-              Columns: [
-                { Name: "timestamp", Type: "string" },
-                { Name: "level", Type: "string" },
-                { Name: "tenant", Type: "string" },
-                { Name: "environment", Type: "string" },
-                { Name: "component", Type: "string" },
-                { Name: "correlation_id", Type: "string" },
-                { Name: "request_id", Type: "string" },
-                { Name: "event", Type: "string" },
-                { Name: "path", Type: "string" },
-                { Name: "job", Type: "string" },
-                { Name: "status", Type: "string" },
-                { Name: "entity_id", Type: "string" },
-                { Name: "detail", Type: "string" },
-              ],
-              Location: `s3://${s3BucketName}/`,
-              InputFormat: "org.apache.hadoop.mapred.TextInputFormat",
-              OutputFormat: "org.apache.hadoop.hive.ql.io.IgnoreKeyTextOutputFormat",
-              SerdeInfo: {
-                SerializationLibrary: "org.openx.data.jsonserde.JsonSerDe",
-                Parameters: {
-                  "ignore.malformed.json": "true",
-                },
-              },
-            },
-          },
-        },
-        physicalResourceId: cr.PhysicalResourceId.of(`${this.ATHENA_DB}.${this.ATHENA_TABLE}`),
-        ignoreErrorCodesMatching: "AlreadyExistsException",
-      },
-      policy: cr.AwsCustomResourcePolicy.fromSdkCalls({
-        resources: cr.AwsCustomResourcePolicy.ANY_RESOURCE,
-      }),
-    });
-  }  
-
-
-private createLogMcpHandlerLambda(s3BucketName: string, athenaResultsBucketName: string) {
+private createLogMcpHandlerLambda(s3BucketName: string, athenaResultsBucketName: string, athenaDatabase: string, athenaTable: string, athenaWorkgroup: string) {
   const role = new iam.Role(this, "LogMcpHandlerRole", {
     assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
     managedPolicies: [
@@ -216,7 +151,7 @@ private createLogMcpHandlerLambda(s3BucketName: string, athenaResultsBucketName:
               "athena:StopQueryExecution",
               "athena:GetWorkGroup"
             ],
-            resources: [`arn:aws:athena:${this.region}:${this.account}:workgroup/${this.ATHENA_WORKGROUP}`]
+            resources: [`arn:aws:athena:${this.region}:${this.account}:workgroup/${athenaWorkgroup}`]
           }),
           new iam.PolicyStatement({
             actions: [
@@ -230,8 +165,8 @@ private createLogMcpHandlerLambda(s3BucketName: string, athenaResultsBucketName:
             ],
             resources: [
               `arn:aws:glue:${this.region}:${this.account}:catalog`,
-              `arn:aws:glue:${this.region}:${this.account}:database/${this.ATHENA_DB}`,
-              `arn:aws:glue:${this.region}:${this.account}:table/${this.ATHENA_DB}/${this.ATHENA_TABLE}`
+              `arn:aws:glue:${this.region}:${this.account}:database/${athenaDatabase}`,
+              `arn:aws:glue:${this.region}:${this.account}:table/${athenaDatabase}/${athenaTable}`
             ]
           }),
           new iam.PolicyStatement({
@@ -271,9 +206,9 @@ private createLogMcpHandlerLambda(s3BucketName: string, athenaResultsBucketName:
     timeout: cdk.Duration.seconds(60),
     memorySize: 512,
     environment: {
-      ATHENA_DATABASE: this.ATHENA_DB,
-      ATHENA_TABLE: this.ATHENA_TABLE,
-      ATHENA_WORKGROUP: this.ATHENA_WORKGROUP,
+      ATHENA_DATABASE: athenaDatabase,
+      ATHENA_TABLE: athenaTable,
+      ATHENA_WORKGROUP: athenaWorkgroup,
       ATHENA_OUTPUT: `s3://${athenaResultsBucketName}/athena-output/`
     }
   });
@@ -341,42 +276,6 @@ private createKbMcpHandlerLambda(kbId: string) {
     return { server, scope };
   }
 
-  private createUserPool(): cognito.UserPool {
-    const pool = new cognito.UserPool(this, "UserPool", {
-      userPoolName: "agentcore-user-pool",
-      selfSignUpEnabled: true,
-      signInAliases: {
-        email: true,
-        username: true,
-      },
-      standardAttributes: {
-        email: {
-          required: true,
-          mutable: true,
-        },
-      },
-      customAttributes: {
-        tenantId: new cognito.StringAttribute({ mutable: true }),
-        tenantTier: new cognito.StringAttribute({ mutable: true }),
-      },
-      passwordPolicy: {
-        minLength: 8,
-        requireLowercase: true,
-        requireUppercase: true,
-        requireDigits: true,
-        requireSymbols: true,
-      },
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-    });
-
-    pool.addDomain("UserPoolDomain", {
-      cognitoDomain: {
-        domainPrefix: `agentcore-${this.account}-${cdk.Stack.of(this).region}`,
-      },
-    });
-
-    return pool;
-  }
 
   private createUserClient(userPool: cognito.UserPool): cognito.UserPoolClient {
     return userPool.addClient("user-client", {
