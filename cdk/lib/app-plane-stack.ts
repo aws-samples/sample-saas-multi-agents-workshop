@@ -72,14 +72,13 @@ export class AppPlaneStack extends Stack {
         'tier',
         'tenantName',
         'email',
-        // 'tenantStatus',
+        'tenantStatus',
       ],
       environmentVariablesToOutgoingEvent: {
         tenantData:[
           'tenantS3Bucket',
           'tenantConfig',
-          // 'tenantStatus',
-          'prices', // added so we don't lose it for targets beyond provisioning (ex. billing)
+          'tenantStatus',
           'tenantName', // added so we don't lose it for targets beyond provisioning (ex. billing)
           'email', // added so we don't lose it for targets beyond provisioning (ex. billing)
         ],
