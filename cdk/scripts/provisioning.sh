@@ -182,6 +182,7 @@ fi
 # Export tenant configuration
 log "INFO" "Exporting tenant configuration"
 export tenantStatus="Complete"
+export registrationStatus="Complete"
 export tenantConfig=$(jq --arg SAAS_APP_USERPOOL_ID "$SAAS_APP_USERPOOL_ID" \
   --arg SAAS_TENANT_ID "$SAAS_TENANT_ID" \
   --arg SAAS_APP_CLIENT_ID "$COMMON_SAAS_APP_CLIENT_ID" \

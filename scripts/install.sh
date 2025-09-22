@@ -1,7 +1,7 @@
 #!/bin/bash -e
 
-shopt -s expand_aliases
-source ~/.bashrc
+# shopt -s expand_aliases
+# source ~/.bashrc
 
 # Get operation and convert to lowercase for case-insensitive comparison
 STACK_OPERATION_ORIG=${1:-"create"}
