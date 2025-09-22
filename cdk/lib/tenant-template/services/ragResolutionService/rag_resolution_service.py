@@ -132,7 +132,7 @@ def lambda_handler(event, context):
     aws_session_token = authorizer['aws_session_token']
     knowledge_base_id = authorizer['knowledge_base_id']
     tenant_name = authorizer['tenant_name']
-    tenant_id = authorizer.get('tenant_id', tenant_name)
+    tenant_id = authorizer.get('principalId', tenant_name)
     
     logger.info(f"Processing RAG resolution request for tenant: {tenant_name}, knowledge_base_id: {knowledge_base_id}")
     
