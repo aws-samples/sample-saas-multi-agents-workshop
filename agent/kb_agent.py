@@ -11,8 +11,8 @@ log = logging.Logger(__name__)
 log.level = logging.DEBUG
 
 
-@tool(name="query_kb", description="This tool allows you to query a knowledgebase")
-def kb_agent_tool(query: str) -> str:
+@tool(name="query_kb", description="This tool searches Amazon Bedrock Knowledge base for SaaS application errors with tenant isolation. Performs RAG search limited to specific tenant data.")
+def kb_agent_tool(query: str, tenant_id: str, top_k: int = 5) -> str:
     access_token = ops_context.OpsContext.get_gateway_token_ctx()
 
     # Get gateway URL from environment variable
@@ -32,13 +32,13 @@ def kb_agent_tool(query: str) -> str:
     with streamable_http_mcp_client:
         kb_agent = Agent(
             name="kb_agent",
-            system_prompt=f"You are an agent that searches a Knowledgebase.",
+            system_prompt=f"You are a tenant-aware knowledge base agent that searches Amazon Bedrock Knowledge base for solutions to application errors for a SaaS application (multi-tenant). You must only query knowledge base using tenant_id: {tenant_id}. If there is no tenant_id, refuse to respond.",
             tools=streamable_http_mcp_client.list_tools_sync(),
             model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
         )
 
         try:
-            agent_response = kb_agent(f"Please fetch KB entries for {query}.")
+            agent_response = kb_agent(f"Search knowledge base for tenant {tenant_id} with query: {query}. Specify the number of results to return in top {top_k} (optional). Ensure tenant isolation.")
             text_response = str(agent_response)
 
             if len(text_response) > 0:

@@ -52,7 +52,15 @@ export class AgentCoreStack extends cdk.NestedStack {
     const userClient = this.createUserClient(userPool);
     const m2mClient = this.createM2MClient({ userPool, ...resourceServerInfo });
 
-    const logMcpLambda = this.createLogMcpHandlerLambda(s3BucketName, props.athenaResultsBucketName, props.athenaDatabase, props.athenaTable, props.athenaWorkgroup);
+    const logMcpHandlerRole = this.createLogMcpHandlerRole(s3BucketName, props.athenaResultsBucketName, props.athenaDatabase, props.athenaTable, props.athenaWorkgroup);
+    // LAB 2: Uncomment this line to create a basic role for ABAC
+    // const abacRole = this.createLogMcpHandlerBasicRole();
+
+    // LAB 2: Uncomment this line to create the ABAC role
+    // const abacRole = this.createAbacRole(s3BucketName, athenaResultsBucketName);
+
+    // LAB 2: Switch between logMcpHandlerRole (current) and abacRole to enable ABAC within the Lambda function
+    const logMcpLambda = this.createLogMcpHandlerLambda(s3BucketName, props.athenaResultsBucketName, props.athenaDatabase, props.athenaTable, props.athenaWorkgroup, logMcpHandlerRole);
     const kbMcpLambda = this.createKbMcpHandlerLambda(kbId);
 
     // Create IAM role for AgentCore Gateway
@@ -124,8 +132,105 @@ export class AgentCoreStack extends cdk.NestedStack {
     });    
   }
 
-private createLogMcpHandlerLambda(s3BucketName: string, athenaResultsBucketName: string, athenaDatabase: string, athenaTable: string, athenaWorkgroup: string) {
-  const role = new iam.Role(this, "LogMcpHandlerRole", {
+
+
+// LAB 2: Basic Role - Uncomment to enable ABAC
+/*
+private createLogMcpHandlerBasicRole(): iam.Role {
+  return new iam.Role(this, "LogMcpHandlerBasicRole", {
+    assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
+    managedPolicies: [
+      iam.ManagedPolicy.fromAwsManagedPolicyName("service-role/AWSLambdaBasicExecutionRole")
+    ],
+    inlinePolicies: {
+      AssumeAbacRole: new iam.PolicyDocument({
+        statements: [
+          new iam.PolicyStatement({
+            actions: ["sts:AssumeRole"],
+            resources: [`arn:aws:iam::${this.account}:role/LogMcpHandlerAbacRole`]
+          })
+        ]
+      })
+    }
+  });
+}
+*/
+
+// LAB 2: ABAC Role - Uncomment to enable ABAC
+/*
+private createAbacRole(s3BucketName: string, athenaResultsBucketName: string, athenaDatabase: string, athenaTable: string, athenaWorkgroup: string): iam.Role {
+  return new iam.Role(this, "LogMcpHandlerAbacRole", {
+    assumedBy: new iam.ArnPrincipal(`arn:aws:iam::${this.account}:role/LogMcpHandlerBasicRole`),
+    inlinePolicies: {
+      TenantSpecificAccess: new iam.PolicyDocument({
+        statements: [
+          new iam.PolicyStatement({
+            actions: [
+              "kms:Decrypt",
+              "kms:DescribeKey",
+              "kms:GenerateDataKey*",
+              "kms:Encrypt",
+              "kms:ReEncrypt*"
+            ],
+            resources: ["*"]
+          }),
+          new iam.PolicyStatement({
+            actions: [
+              "athena:StartQueryExecution",
+              "athena:GetQueryExecution",
+              "athena:GetQueryResults",
+              "athena:StopQueryExecution",
+              "athena:GetWorkGroup"
+            ],
+            resources: [`arn:aws:athena:${this.region}:${this.account}:workgroup/${athenaWorkgroup}`]
+          }),
+          new iam.PolicyStatement({
+            actions: [
+              "glue:GetDatabase",
+              "glue:GetDatabases",
+              "glue:GetTable",
+              "glue:GetTables",
+              "glue:GetPartition",
+              "glue:GetPartitions",
+              "glue:BatchGetPartition"
+            ],
+            resources: [
+              `arn:aws:glue:${this.region}:${this.account}:catalog`,
+              `arn:aws:glue:${this.region}:${this.account}:database/${athenaDatabase}`,
+              `arn:aws:glue:${this.region}:${this.account}:table/${athenaDatabase}/${athenaTable}`
+            ]
+          }),
+          new iam.PolicyStatement({
+            actions: [
+              "s3:GetBucketLocation",
+              "s3:ListBucket"
+            ],
+            resources: [
+              `arn:aws:s3:::${athenaResultsBucketName}`,
+              `arn:aws:s3:::${s3BucketName}`
+            ]
+          }),
+          new iam.PolicyStatement({
+            actions: [
+              "s3:PutObject",
+              "s3:GetObject",
+              "s3:AbortMultipartUpload",
+              "s3:ListMultipartUploadParts"
+            ],
+            resources: [
+              `arn:aws:s3:::${athenaResultsBucketName}/*`,
+              `arn:aws:s3:::${s3BucketName}/\${aws:PrincipalTag/tenant_id}/*`
+            ]
+          })
+        ]
+      })
+    }
+  });
+}
+*/
+  
+private createLogMcpHandlerRole(s3BucketName: string, athenaResultsBucketName: string, athenaDatabase: string, athenaTable: string, athenaWorkgroup: string): iam.Role {
+  return new iam.Role(this, "LogMcpHandlerRole", {
     assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
     managedPolicies: [
       iam.ManagedPolicy.fromAwsManagedPolicyName("service-role/AWSLambdaBasicExecutionRole")
@@ -195,7 +300,9 @@ private createLogMcpHandlerLambda(s3BucketName: string, athenaResultsBucketName:
       })
     }
   });
+}
 
+private createLogMcpHandlerLambda(s3BucketName: string, athenaResultsBucketName: string, athenaDatabase: string, athenaTable: string, athenaWorkgroup: string, role: iam.Role) {
   return new lambda.Function(this, "LogMcpHandler", {
     functionName: "AgentCore-LogMcpHandler",
     description: "Lambda function handler for the log MCP server with Athena query capabilities",
@@ -210,6 +317,8 @@ private createLogMcpHandlerLambda(s3BucketName: string, athenaResultsBucketName:
       ATHENA_TABLE: athenaTable,
       ATHENA_WORKGROUP: athenaWorkgroup,
       ATHENA_OUTPUT: `s3://${athenaResultsBucketName}/athena-output/`
+      // LAB 2: Uncomment this line for ABAC
+      // ABAC_ROLE_ARN: abacRole.roleArn      
     }
   });
 }

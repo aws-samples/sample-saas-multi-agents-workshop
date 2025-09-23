@@ -1,3 +1,8 @@
+# {
+#   "tenant_id": "clearpay",
+#   "sql": "SELECT * FROM tenant_logs where tenant = 'clearpay'"
+# }
+
 import os
 import time
 import json
@@ -14,9 +19,13 @@ REGION = os.getenv("AWS_REGION", "us-east-1")
 ATHENA_DB = os.getenv("ATHENA_DATABASE", "saas_logs_db")
 ATHENA_WORKGROUP = os.getenv("ATHENA_WORKGROUP", "primary")
 ATHENA_OUTPUT = os.getenv("ATHENA_OUTPUT", "s3://your-athena-query-output/")
+# LAB 2: ABAC Role ARN (uncomment when using ABAC Lambda)
+# ABAC_ROLE_ARN = os.getenv("ABAC_ROLE_ARN")
 
 # Athena client
 athena = boto3.client("athena", region_name=REGION)
+# LAB 2: STS client for role assumption (uncomment when using ABAC Lambda)
+# sts = boto3.client("sts", region_name=REGION)
 
 
 def _wait(qid: str, timeout_s: int = 180):
@@ -81,6 +90,25 @@ def _exec(sql: str, database: Optional[str] = None) -> List[Dict[str, Any]]:
     return _fetch(qid)
 
 
+# LAB 2: ABAC Role Assumption Function (uncomment when using ABAC Lambda)
+# def assume_tenant_role(tenant_id: str) -> Dict[str, Any]:
+#     """Assume the ABAC role with tenant-specific tags"""
+#     try:
+#         response = sts.assume_role(
+#             RoleArn=ABAC_ROLE_ARN,
+#             RoleSessionName=f"tenant-{tenant_id}-session",
+#             Tags=[
+#                 {
+#                     'Key': 'tenant_id',
+#                     'Value': tenant_id
+#                 }
+#             ]
+#         )
+#         return response['Credentials']
+#     except Exception as e:
+#         logger.error(f"Failed to assume role for tenant {tenant_id}: {str(e)}")
+#         raise
+
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     Expected payload:
@@ -91,6 +119,20 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         sql = event.get("sql", "")
         if not sql:
             return {"status": "error", "message": "sql required"}
+
+        # LAB 2: ABAC Implementation (uncomment when using ABAC Lambda)
+        # Assume tenant-specific role for ABAC
+        # if tenant_id and ABAC_ROLE_ARN:
+        #     credentials = assume_tenant_role(tenant_id)
+        #     # Create new Athena client with assumed role credentials
+        #     global athena
+        #     athena = boto3.client(
+        #         "athena",
+        #         region_name=REGION,
+        #         aws_access_key_id=credentials['AccessKeyId'],
+        #         aws_secret_access_key=credentials['SecretAccessKey'],
+        #         aws_session_token=credentials['SessionToken']
+        #     )
 
         db = event.get("database") or ATHENA_DB
         rows = _exec(sql, database=db)
