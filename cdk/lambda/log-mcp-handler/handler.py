@@ -1,6 +1,6 @@
 # {
 #   "tenant_id": "clearpay",
-#   "sql": "SELECT * FROM tenant_logs where tenant = 'clearpay'"
+#   "query": "SELECT * FROM tenant_logs where tenant = 'clearpay'"
 # }
 
 import os
@@ -112,13 +112,13 @@ def _exec(sql: str, database: Optional[str] = None) -> List[Dict[str, Any]]:
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     Expected payload:
-      {"tenant_id":"TENANT123","sql":"SELECT ...", "database":"optional_db"}
+      {"tenant_id":"TENANT123","query":"SELECT ...", "database":"optional_db"}
     """
     try:
         tenant_id = event.get("tenant_id")  # kept for request/response echo, not used in SQL
-        sql = event.get("sql", "")
+        sql = event.get("query", "")
         if not sql:
-            return {"status": "error", "message": "sql required"}
+            return {"status": "error", "message": "query required"}
 
         # LAB 2: ABAC Implementation (uncomment when using ABAC Lambda)
         # Assume tenant-specific role for ABAC
@@ -140,7 +140,7 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         return {
             "status": "success",
             "tenant_id": tenant_id,
-            "sql": sql,
+            "query": sql,
             "database": db,
             "rows": rows,
         }
