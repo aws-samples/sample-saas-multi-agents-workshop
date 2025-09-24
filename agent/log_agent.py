@@ -11,8 +11,8 @@ log = logging.Logger(__name__)
 log.level = logging.DEBUG
 
 
-@tool(name="query_logs", description="This tool allows you to query logs")
-def log_agent_tool(query: str) -> str:
+@tool(name="query_logs", description="This tool allows you to query tenant application logs using Amazon Athena-compatible queries")
+def log_agent_tool(query: str, tenant_id: str) -> str:
     access_token = ops_context.OpsContext.get_gateway_token_ctx()
 
     # Get gateway URL from environment variable
@@ -30,21 +30,48 @@ def log_agent_tool(query: str) -> str:
     )
 
     with streamable_http_mcp_client:
-        log_agent = Agent(
-            name="log_agent",
-            system_prompt=f"You are an agent that can access a customer's cloud logs using its tools.",
-            tools=streamable_http_mcp_client.list_tools_sync(),
-            model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
-        )
+            system_prompt = f"""You are a log analysis agent that searches tenant application logs using Amazon Athena-compatible SQL queries.
 
-        try:
-            agent_response = log_agent(f"Please fetch the logs for {query}.")
-            text_response = str(agent_response)
+            TENANT_LOGS SCHEMA:
+            - timestamp (string): Log timestamp in ISO format
+            - level (string): Log level (INFO, ERROR, WARN, DEBUG)
+            - tenant (string): Tenant identifier
+            - environment (string): Environment name
+            - component (string): Application component
+            - correlation_id (string): Request correlation ID
+            - request_id (string): Unique request ID
+            - event (string): Event type/name
+            - path (string): Request path
+            - job (string): Job identifier
+            - status (string): Status code/message
+            - entity_id (string): Entity identifier
+            - detail (string): Detailed log message
 
-            if len(text_response) > 0:
-                return text_response
+            QUERY EXAMPLES:
+            1. Get all logs for tenant: SELECT * FROM tenant_logs WHERE tenant = '{tenant_id}'
+            2. Find errors: SELECT * FROM tenant_logs WHERE tenant = '{tenant_id}' AND level = 'ERROR'
+            3. Search by time range: SELECT * FROM tenant_logs WHERE tenant = '{tenant_id}' AND timestamp >= '2025-09-22T23:00:00Z'
+            4. Find specific events: SELECT * FROM tenant_logs WHERE tenant = '{tenant_id}' AND event = 'python_exception'
+            5. Search by correlation ID: SELECT * FROM tenant_logs WHERE tenant = '{tenant_id}' AND correlation_id = 'corr_123'
+            6. Count errors by component: SELECT component, COUNT(*) as error_count FROM tenant_logs WHERE tenant = '{tenant_id}' AND level = 'ERROR' GROUP BY component
+            7. Recent errors: SELECT * FROM tenant_logs WHERE tenant = '{tenant_id}' AND level = 'ERROR' ORDER BY timestamp DESC LIMIT 10
 
-            return "I apologize, but I couldn't find any logs for this query. Please try rephrasing it."
-        except Exception as e:
-            # Return specific error message for math processing
-            return f"Error processing your log query: {str(e)}"
+            Always include tenant filter in queries for security. Focus on finding errors and patterns that help troubleshoot issues."""
+
+            log_agent = Agent(
+                name="log_agent",
+                system_prompt=system_prompt,
+                tools=streamable_http_mcp_client.list_tools_sync(),
+                model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            )
+
+            try:
+                agent_response = log_agent(f"Execute this log query for tenant {tenant_id}: {query}")
+                text_response = str(agent_response)
+
+                if len(text_response) > 0:
+                    return text_response
+
+                return "No logs found for this query. Try adjusting the search criteria."
+            except Exception as e:
+                return f"Error processing log query: {str(e)}"

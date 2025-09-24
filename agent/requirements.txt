@@ -1,3 +1,4 @@
 boto3
 bedrock-agentcore
 strands-agents[a2a]
+aws_lambda_powertools

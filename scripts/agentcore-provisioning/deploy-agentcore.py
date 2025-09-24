@@ -125,19 +125,40 @@ def destroy_oauth_provider():
 
 def destroy_agentcore_runtime():
     logger.info("Destroying AgentCore Runtime")
-    try:
-        agentcore = boto3.client("bedrock-agentcore-control")
-        runtimes = agentcore.list_agent_runtimes()["agentRuntimes"]
-        for runtime in runtimes:
-            if "ops_agent" in runtime["agentRuntimeArn"]:
-                # Extract ID from ARN and handle URL decoding
-                arn_parts = runtime["agentRuntimeArn"].split("/")
-                if len(arn_parts) >= 2:
-                    runtime_id = arn_parts[-1]  # Get the last part after the last slash
-                    agentcore.delete_agent_runtime(agentRuntimeId=runtime_id)
-    except Exception as e:
-        logger.error(f"Error destroying AgentCore runtime: {e}")
-
+    agentcore = boto3.client("bedrock-agentcore-control")
+    
+    while True:
+        try:
+            runtimes = agentcore.list_agent_runtimes()["agentRuntimes"]
+            runtime_to_delete = None
+            
+            for runtime in runtimes:
+                if "ops_agent" in runtime["agentRuntimeArn"]:
+                    runtime_to_delete = runtime
+                    break
+            
+            if not runtime_to_delete:
+                logger.info("No ops_agent runtime found to delete")
+                break
+                
+            # Extract ID from ARN
+            arn_parts = runtime_to_delete["agentRuntimeArn"].split("/")
+            if len(arn_parts) >= 2:
+                runtime_id = arn_parts[-1]
+                agentcore.delete_agent_runtime(agentRuntimeId=runtime_id)
+                logger.info("Agent runtime deletion initiated, waiting for completion...")
+                
+        except Exception as e:
+            if "DELETING" in str(e):
+                logger.info("Agent runtime is still deleting, waiting 5 seconds...")
+                time.sleep(5)
+                continue
+            else:
+                logger.error(f"Error destroying AgentCore runtime: {e}")
+                break
+        
+        # Wait and check if deletion completed
+        time.sleep(5)
 
 def create_log_mcp_server(
     role_arn,
@@ -182,7 +203,7 @@ def create_log_mcp_server(
         agentcore.create_gateway_target(
             gatewayIdentifier=gateway_id,
             name="LogSearchTarget",
-            description="Searches cloud logs using free text queries",
+            description="Searches tenant application logs using Amazon Athena-compatible queries",
             targetConfiguration={
                 "mcp": {
                     "lambda": {
@@ -191,24 +212,20 @@ def create_log_mcp_server(
                             "inlinePayload": [
                                 {
                                     "name": "search_logs",
-                                    "description": "Search logs using natural language queries",
+                                    "description": "Search logs using Amazon Athena-compatible queries",
                                     "inputSchema": {
                                         "type": "object",
                                         "properties": {
                                             "query": {
                                                 "type": "string",
-                                                "description": "Free text search query",
+                                                "description": "Amazon Athena-compatible search query",
                                             },
-                                            "timeRange": {
-                                                "type": "object",
-                                                "properties": {
-                                                    "start": {"type": "string"},
-                                                    "end": {"type": "string"},
-                                                },
-                                                "required": ["start", "end"],
+                                            "tenant_id": {
+                                                "type": "string",
+                                                "description": "Tenant identifier for multi-tenant log isolation",
                                             },
                                         },
-                                        "required": ["query"],
+                                        "required": ["query", "tenant_id"],
                                     },
                                 }
                             ]
@@ -222,7 +239,6 @@ def create_log_mcp_server(
         )
 
     return gateway_id
-
 
 def create_kb_mcp_server(
     role_arn,
@@ -284,12 +300,16 @@ def create_kb_mcp_server(
                                                 "type": "string",
                                                 "description": "Free text search query",
                                             },
-                                            "maxResults": {
+                                            "tenant_id": {
+                                                "type": "string",
+                                                "description": "Tenant identifier for multi-tenant knowledge base isolation",
+                                            },
+                                            "top_k": {
                                                 "type": "integer",
                                                 "description": "Maximum number of results to return",
                                             },
                                         },
-                                        "required": ["query"],
+                                        "required": ["query", "tenant_id"],                                        
                                     },
                                 }
                             ]
@@ -307,7 +327,7 @@ def create_kb_mcp_server(
 
 def update_access_token_file(provider_name):
     """Update access_token.py with the new provider name"""
-    access_token_file = "../agent/access_token.py"
+    access_token_file = "../../agent/access_token.py"
     
     with open(access_token_file, "r") as f:
         content = f.read()
@@ -322,7 +342,6 @@ def update_access_token_file(provider_name):
         f.write(updated_content)
     
     logger.info(f"Updated access_token.py with provider name: {provider_name}")
-
 
 def create_m2m_outbound_identity(
     m2m_client_id, m2m_client_secret, discovery_url, region, recreate=False
@@ -358,7 +377,6 @@ def create_m2m_outbound_identity(
     except Exception as e:
         if "already exists" not in str(e):
             raise
-
 
 def update_agent_runtime_with_gateways(log_gateway_id, kb_gateway_id, region, role_arn):
     logger.info("Updating agent runtime with gateway URLs")
@@ -423,7 +441,7 @@ def create_agentcore_runtime(
     if recreate:
         destroy_agentcore_runtime()
         # Clear agent-specific config to force fresh creation
-        config_file = "../agent/.bedrock_agentcore.yaml"
+        config_file = "../../agent/.bedrock_agentcore.yaml"
         if os.path.exists(config_file):
             with open(config_file, "r") as f:
                 config = yaml.safe_load(f)
@@ -441,7 +459,7 @@ def create_agentcore_runtime(
 
     agentcore_runtime = Runtime()
 
-    with change_dir("../agent/"):
+    with change_dir("../../agent/"):
         agentcore_runtime.configure(
             entrypoint="main.py",
             auto_create_execution_role=True,
