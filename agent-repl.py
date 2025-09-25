@@ -19,11 +19,12 @@ from rich.panel import Panel
 logger = logging.getLogger(__name__)
 console = Console()
 
+region = os.environ.get("AWS_REGION", "us-east-1")
 
 def get_stack_outputs():
     logger.debug("Getting CloudFormation stack outputs")
-    cf = boto3.client("cloudformation")
-    response = cf.describe_stacks(StackName="AgentCoreStack")
+    cf = boto3.client("cloudformation", region_name=region)
+    response = cf.describe_stacks(StackName="saas-genai-workshop-common-resources")
     outputs = response["Stacks"][0]["Outputs"]
     result = {output["OutputKey"]: output["OutputValue"] for output in outputs}
     logger.debug(f"Stack outputs: {list(result.keys())}")
@@ -33,7 +34,7 @@ def get_stack_outputs():
 def get_agent_arn():
     logger.debug("Looking for ops_agent runtime")
     try:
-        agentcore = boto3.client("bedrock-agentcore-control")
+        agentcore = boto3.client("bedrock-agentcore-control", region_name=region)
         runtimes = agentcore.list_agent_runtimes()["agentRuntimes"]
         for runtime in runtimes:
             if "ops_agent" in runtime["agentRuntimeArn"]:
@@ -56,9 +57,9 @@ def get_agent_arn():
 
 def get_access_token():
     stack_outputs = get_stack_outputs()
-    user_pool_id = stack_outputs["UserPoolId"]
-    user_client_id = stack_outputs["UserClientId"]
-    region = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
+    user_pool_id = stack_outputs["TenantUserpoolId"]
+    user_client_id = stack_outputs["UserPoolClientId"]
+    
 
     logger.debug(f"Using user pool: {user_pool_id}")
     logger.debug(f"Using client: {user_client_id}")
@@ -119,7 +120,7 @@ def get_recent_logs(agent_arn):
         agent_id = agent_arn.split("/")[-1]
         log_group = f"/aws/bedrock-agentcore/runtimes/{agent_id}-DEFAULT"
 
-        logs_client = boto3.client("logs")
+        logs_client = boto3.client("logs", region_name=region)
 
         # Get logs from last 5 minutes across all streams
         end_time = int(time.time() * 1000)
@@ -145,7 +146,6 @@ def get_recent_logs(agent_arn):
 def invoke_agent_with_streaming(
     prompt: str, agent_arn: str, token: str, *, runtime_session_id=None
 ):
-    region = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
 
     # URL encode the agent ARN
     escaped_agent_arn = urllib.parse.quote(agent_arn, safe="")

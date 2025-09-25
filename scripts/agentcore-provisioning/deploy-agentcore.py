@@ -327,7 +327,7 @@ def create_kb_mcp_server(
 
 def update_access_token_file(provider_name):
     """Update access_token.py with the new provider name"""
-    access_token_file = "../../agent/access_token.py"
+    access_token_file = "../agent/access_token.py"
     
     with open(access_token_file, "r") as f:
         content = f.read()
@@ -441,7 +441,7 @@ def create_agentcore_runtime(
     if recreate:
         destroy_agentcore_runtime()
         # Clear agent-specific config to force fresh creation
-        config_file = "../../agent/.bedrock_agentcore.yaml"
+        config_file = "../agent/.bedrock_agentcore.yaml"
         if os.path.exists(config_file):
             with open(config_file, "r") as f:
                 config = yaml.safe_load(f)
