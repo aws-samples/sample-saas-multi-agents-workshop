@@ -1,22 +1,23 @@
-from strands import Agent, tool
 from mcp.client.streamable_http import streamablehttp_client
-from strands import Agent
 from strands.tools.mcp.mcp_client import MCPClient
-import logging
-import os
+from strands import Agent, tool
 
+import logging
 import ops_context
+import wrapped_tool
+import constants
 
 log = logging.Logger(__name__)
 log.level = logging.DEBUG
 
-
 @tool(name="query_logs", description="This tool allows you to query tenant application logs using Amazon Athena-compatible queries")
-def log_agent_tool(query: str, tenant_id: str) -> str:
-    access_token = ops_context.OpsContext.get_gateway_token_ctx()
+def log_agent_tool(query: str) -> str:
+    access_token = ops_context.OpsContext.get_authorization_header_ctx()
+    if not access_token:
+        raise ValueError("Authorization header is not set")
 
-    # Get gateway URL from environment variable
-    log_gateway_url = os.environ.get("LOG_GATEWAY_URL")
+    # Workaround for AgentCore Runtime Bug
+    log_gateway_url = constants.LOG_MCP_SERVER_URL
     if not log_gateway_url:
         raise ValueError("LOG_GATEWAY_URL environment variable is not set")
 
@@ -24,13 +25,27 @@ def log_agent_tool(query: str, tenant_id: str) -> str:
         lambda: streamablehttp_client(
             log_gateway_url,
             headers={
-                "Authorization": f"Bearer {access_token}",
+                "Authorization": f"{access_token}",
             },
         )
     )
 
+    decoded = ops_context.decode_jwt_claims(access_token)
+    tenant_id = decoded.get("tenantId")
+
     with streamable_http_mcp_client:
-            system_prompt = f"""You are a log analysis agent that searches tenant application logs using Amazon Athena-compatible SQL queries.
+        tools = []
+
+        for t in streamable_http_mcp_client.list_tools_sync():
+            if t.tool_name != "x_amz_bedrock_agentcore_search":
+                tool = wrapped_tool.WrappedTool(t)
+                tool.bind_param("tenant_id", tenant_id)
+
+                tools.append(tool)
+            else:
+                tools.append(t)
+            
+            system_prompt = """You are a log analysis agent that searches tenant application logs using Amazon Athena-compatible SQL queries.
 
             TENANT_LOGS SCHEMA:
             - timestamp (string): Log timestamp in ISO format
@@ -48,20 +63,18 @@ def log_agent_tool(query: str, tenant_id: str) -> str:
             - detail (string): Detailed log message
 
             QUERY EXAMPLES:
-            1. Get all logs for tenant: SELECT * FROM tenant_logs WHERE tenant = '{tenant_id}'
-            2. Find errors: SELECT * FROM tenant_logs WHERE tenant = '{tenant_id}' AND level = 'ERROR'
-            3. Search by time range: SELECT * FROM tenant_logs WHERE tenant = '{tenant_id}' AND timestamp >= '2025-09-22T23:00:00Z'
-            4. Find specific events: SELECT * FROM tenant_logs WHERE tenant = '{tenant_id}' AND event = 'python_exception'
-            5. Search by correlation ID: SELECT * FROM tenant_logs WHERE tenant = '{tenant_id}' AND correlation_id = 'corr_123'
-            6. Count errors by component: SELECT component, COUNT(*) as error_count FROM tenant_logs WHERE tenant = '{tenant_id}' AND level = 'ERROR' GROUP BY component
-            7. Recent errors: SELECT * FROM tenant_logs WHERE tenant = '{tenant_id}' AND level = 'ERROR' ORDER BY timestamp DESC LIMIT 10
+            1. Get all logs: SELECT * FROM tenant_logs
+            2. Find errors: SELECT * FROM tenant_logs WHERE level = 'ERROR'
+            3. Search by time range: SELECT * FROM tenant_logs WHERE timestamp >= '2025-09-22T23:00:00Z'
+            4. Count errors by component: SELECT component, COUNT(*) as error_count FROM tenant_logs WHERE level = 'ERROR' GROUP BY component
+            5. Recent errors: SELECT * FROM tenant_logs WHERE level = 'ERROR' ORDER BY timestamp DESC LIMIT 10
 
-            Always include tenant filter in queries for security. Focus on finding errors and patterns that help troubleshoot issues."""
+            Focus on finding errors and patterns that help troubleshoot issues."""
 
             log_agent = Agent(
                 name="log_agent",
                 system_prompt=system_prompt,
-                tools=streamable_http_mcp_client.list_tools_sync(),
+                tools=tools,
                 model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
             )
 

@@ -1,3 +1,7 @@
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+import contextvars
+
 from bedrock_agentcore import BedrockAgentCoreApp
 import logging
 import asyncio
@@ -36,12 +40,12 @@ async def agent_task(user_message: str, session_id: str):
             #     session_id=session_id,
             # )
 
+            #agent = OrchestratorAgent()
             agent = OrchestratorAgent(
                 bearer_token=gateway_access_token,
                 # memory_hook=memory_hook,
                 # tools=[get_calendar_events_today, create_calendar_event],
             )
-
             OpsContext.set_agent_ctx(agent)
 
         async for chunk in agent.stream(user_query=user_message):
@@ -54,19 +58,51 @@ async def agent_task(user_message: str, session_id: str):
         await response_queue.finish()
 
 
+REQUEST_HEADERS: contextvars.ContextVar[dict] = contextvars.ContextVar(
+    "REQUEST_HEADERS", default={}
+)
+
+
+class CaptureHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        REQUEST_HEADERS.set(dict(request.headers))
+        return await call_next(request)
+
+
+app.add_middleware(CaptureHeadersMiddleware)
+
+
 @app.entrypoint
 async def agent_invocation(payload, context):
+    # auth_header = context.request_headers.get("Authorization")
+
+    headers = REQUEST_HEADERS.get({})
+    auth_header = headers.get("authorization")  # Headers accessible here
+
+    if not auth_header:
+        print(f"==========################### Headers ###################==========")
+        for key, value in headers:
+            print(f"\t\t\t{key}: {value}")
+
+        raise Exception("Authorization header not found")
+
     if not OpsContext.get_response_queue_ctx():
         OpsContext.set_response_queue_ctx(StreamingQueue())
 
     if not OpsContext.get_gateway_token_ctx():
-        OpsContext.set_gateway_token_ctx(await get_token(access_token=""))
+        OpsContext.set_gateway_token_ctx("Foobar")
+        # OpsContext.set_gateway_token_ctx(await get_token(access_token=""))
+
+    if not OpsContext.get_authorization_header_ctx():
+        print(
+            f"==========################### Auth header is {auth_header} ###################=========="
+        )
+        OpsContext.set_authorization_header_ctx(auth_header)
 
     user_message = payload["prompt"]
     # actor_id = payload["actor_id"]
 
     session_id = context.session_id
-
     if not session_id:
         raise Exception("Context session_id is not set")
 

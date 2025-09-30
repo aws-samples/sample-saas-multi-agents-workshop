@@ -19,8 +19,8 @@ agents:
       observability:
         enabled: true
     bedrock_agentcore:
-      agent_id: ops_agent-blaQyLCuXf
-      agent_arn: arn:aws:bedrock-agentcore:us-east-1:822849401905:runtime/ops_agent-blaQyLCuXf
+      agent_id: ops_agent-kJjJLWCzJC
+      agent_arn: arn:aws:bedrock-agentcore:us-east-1:822849401905:runtime/ops_agent-kJjJLWCzJC
       agent_session_id: null
     codebuild:
       project_name: bedrock-agentcore-ops_agent-builder
@@ -32,4 +32,5 @@ agents:
         allowedClients:
         - 3q6h8ulnn3anrrdnccs46g5sl4
         - 5j7h7abp9qus8hbnvmqtfrk23r
+    request_header_configuration: null
     oauth_configuration: null

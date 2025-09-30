@@ -1,10 +1,23 @@
 from contextvars import ContextVar
 from typing import Optional
 import asyncio
+import jwt
 
 from streaming_queue import StreamingQueue
 from orchestrator_agent import OrchestratorAgent
 
+
+def decode_jwt_claims(token: str) -> dict:
+    """Decode JWT token and return all claims as a dict"""
+    try:
+        # Remove 'Bearer ' prefix if present
+        if token.startswith('Bearer '):
+            token = token[7:]
+        # Decode without verification (for development/testing)
+        claims = jwt.decode(token, options={"verify_signature": False})
+        return claims
+    except Exception as e:
+        return {"error": f"Failed to decode JWT: {str(e)}"}
 
 class OpsContext:
     """Context Manager for Customer Support Assistant"""
@@ -13,6 +26,7 @@ class OpsContext:
     _gateway_token: Optional[str] = None
     _response_queue: Optional[StreamingQueue] = None
     _agent: Optional[OrchestratorAgent] = None
+    _authorization_header: Optional[str] = None    
 
     _gateway_token_ctx: ContextVar[Optional[str]] = ContextVar(
         "gateway_token", default=None
@@ -22,6 +36,9 @@ class OpsContext:
     )
     _agent_ctx: ContextVar[Optional[OrchestratorAgent]] = ContextVar(
         "agent", default=None
+    )
+    _authorization_header_ctx: ContextVar[Optional[str]] = ContextVar(
+        "authorization_header", default=None
     )
 
     @classmethod
@@ -77,3 +94,18 @@ class OpsContext:
         # Set both global state and context variable
         cls._agent = agent
         cls._agent_ctx.set(agent)
+
+    @classmethod
+    def get_authorization_header_ctx(cls) -> Optional[str]:
+        if cls._authorization_header:
+            return cls._authorization_header
+        try:
+            return cls._authorization_header_ctx.get()
+        except LookupError:
+            return None
+
+    @classmethod
+    def set_authorization_header_ctx(cls, header: str) -> None:
+        cls._authorization_header = header
+        cls._authorization_header_ctx.set(header)
+

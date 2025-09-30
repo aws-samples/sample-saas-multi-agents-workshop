@@ -66,11 +66,19 @@ def get_access_token() -> Tuple[str, str]:
     #user_pool_id = stack_outputs["TenantUserpoolId"]
     #user_client_id = stack_outputs["UserPoolClientId"]
 
+    region = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
+
+    user_pool_id = stack_outputs["UserPoolId"]
+    user_client_id = stack_outputs["UserClientId"]
+    #user_pool_id = stack_outputs["TenantUserpoolId"]
+    #user_client_id = stack_outputs["UserPoolClientId"]
+
     logger.debug(f"Using user pool: {user_pool_id}")
     logger.debug(f"Using client: {user_client_id}")
 
     # Prompt for credentials
     username = input("Username (testuser): ").strip() or "testuser"
+    password = getpass.getpass("Password (TempPassword123!): ") or "Test1test@"
     password = getpass.getpass("Password (TempPassword123!): ") or "Test1test@"
 
     logger.debug("Authenticating with Cognito")

@@ -1,27 +1,39 @@
 FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+WORKDIR /app
 
-# All environment variables in one layer
-ENV UV_SYSTEM_PYTHON=1 UV_COMPILE_BYTECODE=1 PYTHONUNBUFFERED=1 \
-    AWS_REGION=us-east-1 AWS_DEFAULT_REGION=us-east-1 \
-    DOCKER_CONTAINER=1
+# Configure UV for container environment
+ENV UV_SYSTEM_PYTHON=1 UV_COMPILE_BYTECODE=1
 
 
 
 COPY requirements.txt requirements.txt
+# Install from requirements file
+RUN uv pip install -r requirements.txt
 
 
 
 
-RUN uv pip install -r requirements.txt && \
-    uv pip install aws-opentelemetry-distro>=0.10.1
+RUN uv pip install aws-opentelemetry-distro>=0.10.1
 
 
-EXPOSE 8080 8000
+# Set AWS region environment variable
 
-# Copy entire project
+ENV AWS_REGION=us-east-1
+ENV AWS_DEFAULT_REGION=us-east-1
 
+
+# Signal that this is running in Docker for host binding logic
+ENV DOCKER_CONTAINER=1
+
+# Create non-root user
+RUN useradd -m -u 1000 bedrock_agentcore
+USER bedrock_agentcore
+
+EXPOSE 8080
+EXPOSE 8000
+
+# Copy entire project (respecting .dockerignore)
 COPY . .
-
 
 # Use the full module path
 

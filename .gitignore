@@ -12,3 +12,6 @@ docs/
 # CDK asset staging directory
 .cdk.staging
 cdk.out
+
+agent/.bedrock_agentcore.yaml
+agent/constants.py
