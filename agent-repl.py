@@ -3,6 +3,7 @@
 import os
 import sys
 import json
+from typing import Tuple
 import uuid
 import urllib.parse
 import requests
@@ -11,6 +12,8 @@ import getpass
 import argparse
 import logging
 import time
+import jwt
+
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.live import Live
@@ -55,18 +58,20 @@ def get_agent_arn():
     return None
 
 
-def get_access_token():
+def get_access_token() -> Tuple[str, str]:
     stack_outputs = get_stack_outputs()
-    user_pool_id = stack_outputs["TenantUserpoolId"]
-    user_client_id = stack_outputs["UserPoolClientId"]
-    
+
+    user_pool_id = stack_outputs["UserPoolId"]
+    user_client_id = stack_outputs["UserClientId"]
+    #user_pool_id = stack_outputs["TenantUserpoolId"]
+    #user_client_id = stack_outputs["UserPoolClientId"]
 
     logger.debug(f"Using user pool: {user_pool_id}")
     logger.debug(f"Using client: {user_client_id}")
 
     # Prompt for credentials
     username = input("Username (testuser): ").strip() or "testuser"
-    password = getpass.getpass("Password (TempPassword123!): ") or "TempPassword123!"
+    password = getpass.getpass("Password (TempPassword123!): ") or "Test1test@"
 
     logger.debug("Authenticating with Cognito")
 
@@ -84,7 +89,29 @@ def get_access_token():
 
         if "AuthenticationResult" in response:
             logger.debug("Authentication successful")
-            return response["AuthenticationResult"]["AccessToken"]
+            access_token = response["AuthenticationResult"]["AccessToken"]
+            id_token = response["AuthenticationResult"].get("IdToken")
+            
+            # Print tokens and decoded tokens
+            logger.debug(f"Access Token: {access_token}")
+            try:
+                decoded_access = jwt.decode(access_token, options={"verify_signature": False})
+                logger.debug(f"Decoded Access Token:")
+                logger.debug(json.dumps(decoded_access, indent=2))
+            except Exception as e:
+                logger.debug(f"Error decoding access token: {e}")
+            
+            if id_token:
+                logger.debug(f"ID Token: {id_token}")
+                try:
+                    decoded_id = jwt.decode(id_token, options={"verify_signature": False})
+                    logger.debug(f"Decoded ID Token:")
+                    logger.debug(json.dumps(decoded_id, indent=2))
+                except Exception as e:
+                    logger.debug(f"Error decoding ID token: {e}")
+            
+            return access_token, id_token
+            
         elif response.get("ChallengeName") == "NEW_PASSWORD_REQUIRED":
             logger.debug("New password required")
             print("New password required. Please set a new password.")
@@ -100,16 +127,39 @@ def get_access_token():
 
             if "AuthenticationResult" in challenge_response:
                 logger.debug("Password change successful")
-                return challenge_response["AuthenticationResult"]["AccessToken"]
+                access_token = challenge_response["AuthenticationResult"]["AccessToken"]
+                id_token = challenge_response["AuthenticationResult"].get("IdToken")
+                
+                # Print tokens and decoded tokens
+                logger.debug(f"Access Token: {access_token}")
+                try:
+                    decoded_access = jwt.decode(access_token, options={"verify_signature": False})
+                    logger.debug(f"Decoded Access Token:")
+                    logger.debug(json.dumps(decoded_access, indent=2))
+                except Exception as e:
+                    logger.debug(f"Error decoding access token: {e}")
+                
+                if id_token:
+                    logger.debug(f"ID Token: {id_token}")
+                    try:
+                        decoded_id = jwt.decode(id_token, options={"verify_signature": False})
+                        logger.debug(f"Decoded ID Token:")
+                        logger.debug(json.dumps(decoded_id, indent=2))
+                    except Exception as e:
+                        logger.debug(f"Error decoding ID token: {e}")
+                
+                return access_token, id_token
             else:
                 logger.debug(f"Password change failed: {challenge_response}")
+                raise Exception("Password change failed")
         else:
             logger.debug(f"Unexpected auth response: {response}")
+            raise Exception("Authentication failed")
 
     except Exception as e:
         logger.debug(f"Authentication error: {e}")
+        raise
 
-    return None
 
 
 def get_recent_logs(agent_arn):
@@ -143,16 +193,18 @@ def get_recent_logs(agent_arn):
         return f"Error retrieving logs: {e}"
 
 
+
 def invoke_agent_with_streaming(
     prompt: str, agent_arn: str, token: str, *, runtime_session_id=None
 ):
-
     # URL encode the agent ARN
     escaped_agent_arn = urllib.parse.quote(agent_arn, safe="")
 
     # Construct the URL
     url = f"https://bedrock-agentcore.{region}.amazonaws.com/runtimes/{escaped_agent_arn}/invocations?qualifier=DEFAULT"
     logger.debug(f"Invoking: {url}")
+
+    #logger.info(token)
 
     # Set up headers
     headers = {
@@ -271,9 +323,11 @@ def main():
         sys.exit(1)
 
     token = get_access_token()
-    if not token:
+    if not token[0]:
         print("Error: Could not get access token")
         sys.exit(1)
+    else:
+        access_token, id_token = token
 
     print(f"Connected to agent: {agent_arn}")
     print("Type '/quit' or '/exit' to quit, '/clear' to force a new session\n")
@@ -298,7 +352,7 @@ def main():
 
             logger.debug(f"User prompt: {prompt}")
             invoke_agent_with_streaming(
-                prompt, agent_arn, token, runtime_session_id=session_id
+                prompt, agent_arn, access_token, runtime_session_id=session_id
             )
             print()
 
