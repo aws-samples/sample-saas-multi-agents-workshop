@@ -42,6 +42,3 @@ const commonResource = new CommonResourcesStack(
 new ServicesStack(app, "ServicesStack", {
   env,
 });
-
-// AthenaStack and AgentCoreStack are now created as substacks within CommonResourcesStack
-// This eliminates the cyclic dependency issue by creating resources in the proper order

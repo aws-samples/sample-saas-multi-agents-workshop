@@ -45,46 +45,46 @@ def log_agent_tool(query: str) -> str:
             else:
                 tools.append(t)
             
-            system_prompt = """You are a log analysis agent that searches tenant application logs using Amazon Athena-compatible SQL queries.
+        system_prompt = """You are a log analysis agent that searches tenant application logs using Amazon Athena-compatible SQL queries.
 
-            TENANT_LOGS SCHEMA:
-            - timestamp (string): Log timestamp in ISO format
-            - level (string): Log level (INFO, ERROR, WARN, DEBUG)
-            - tenant (string): Tenant identifier
-            - environment (string): Environment name
-            - component (string): Application component
-            - correlation_id (string): Request correlation ID
-            - request_id (string): Unique request ID
-            - event (string): Event type/name
-            - path (string): Request path
-            - job (string): Job identifier
-            - status (string): Status code/message
-            - entity_id (string): Entity identifier
-            - detail (string): Detailed log message
+        TENANT_LOGS SCHEMA:
+        - timestamp (string): Log timestamp in ISO format
+        - level (string): Log level (INFO, ERROR, WARN, DEBUG)
+        - tenant (string): Tenant identifier
+        - environment (string): Environment name
+        - component (string): Application component
+        - correlation_id (string): Request correlation ID
+        - request_id (string): Unique request ID
+        - event (string): Event type/name
+        - path (string): Request path
+        - job (string): Job identifier
+        - status (string): Status code/message
+        - entity_id (string): Entity identifier
+        - detail (string): Detailed log message
 
-            QUERY EXAMPLES:
-            1. Get all logs: SELECT * FROM tenant_logs
-            2. Find errors: SELECT * FROM tenant_logs WHERE level = 'ERROR'
-            3. Search by time range: SELECT * FROM tenant_logs WHERE timestamp >= '2025-09-22T23:00:00Z'
-            4. Count errors by component: SELECT component, COUNT(*) as error_count FROM tenant_logs WHERE level = 'ERROR' GROUP BY component
-            5. Recent errors: SELECT * FROM tenant_logs WHERE level = 'ERROR' ORDER BY timestamp DESC LIMIT 10
+        QUERY EXAMPLES:
+        1. Get all logs: SELECT * FROM tenant_logs
+        2. Find errors: SELECT * FROM tenant_logs WHERE level = 'ERROR'
+        3. Search by time range: SELECT * FROM tenant_logs WHERE timestamp >= '2025-09-22T23:00:00Z'
+        4. Count errors by component: SELECT component, COUNT(*) as error_count FROM tenant_logs WHERE level = 'ERROR' GROUP BY component
+        5. Recent errors: SELECT * FROM tenant_logs WHERE level = 'ERROR' ORDER BY timestamp DESC LIMIT 10
 
-            Focus on finding errors and patterns that help troubleshoot issues."""
+        Focus on finding errors and patterns that help troubleshoot issues."""
 
-            log_agent = Agent(
-                name="log_agent",
-                system_prompt=system_prompt,
-                tools=tools,
-                model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
-            )
+        log_agent = Agent(
+            name="log_agent",
+            system_prompt=system_prompt,
+            tools=tools,
+            model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        )
 
-            try:
-                agent_response = log_agent(f"Execute this log query for tenant {tenant_id}: {query}")
-                text_response = str(agent_response)
+        try:
+            agent_response = log_agent(f"Execute this log query for tenant {tenant_id}: {query}")
+            text_response = str(agent_response)
 
-                if len(text_response) > 0:
-                    return text_response
+            if len(text_response) > 0:
+                return text_response
 
-                return "No logs found for this query. Try adjusting the search criteria."
-            except Exception as e:
-                return f"Error processing log query: {str(e)}"
+            return "No logs found for this query. Try adjusting the search criteria."
+        except Exception as e:
+            return f"Error processing log query: {str(e)}"

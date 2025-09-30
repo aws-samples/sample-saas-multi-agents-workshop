@@ -45,7 +45,6 @@ def retrieve_and_generate(session, query, knowledge_base_id, tenant_id, event=No
     bedrock_client = session.client('bedrock-agent-runtime', config=bedrock_config)
 
     # Set the Bedrock model to use for text generation
-    # Set the Bedrock model to use for text generation
     model_id = 'us.amazon.nova-micro-v1:0'
     # Get account ID from the session
     sts_client = session.client('sts')

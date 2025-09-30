@@ -72,7 +72,6 @@ export class AthenaStack extends cdk.NestedStack {
               Columns: [
                 { Name: "timestamp", Type: "string" },
                 { Name: "level", Type: "string" },
-                { Name: "tenant", Type: "string" },
                 { Name: "environment", Type: "string" },
                 { Name: "component", Type: "string" },
                 { Name: "correlation_id", Type: "string" },
@@ -85,6 +84,9 @@ export class AthenaStack extends cdk.NestedStack {
                 { Name: "detail", Type: "string" },
               ],
               Location: `s3://${s3BucketName}/`,
+              PartitionKeys: [
+                { Name: "tenant_id", Type: "string" }
+              ],
               InputFormat: "org.apache.hadoop.mapred.TextInputFormat",
               OutputFormat: "org.apache.hadoop.hive.ql.io.IgnoreKeyTextOutputFormat",
               SerdeInfo: {
@@ -93,6 +95,11 @@ export class AthenaStack extends cdk.NestedStack {
                   "ignore.malformed.json": "true",
                 },
               },
+                Parameters: {
+                "projection.enabled": "true",
+                "projection.tenant_id.type": "injected",
+                "storage.location.template": `s3://${s3BucketName}/\${tenant_id}/`
+              }
             },
           },
         },

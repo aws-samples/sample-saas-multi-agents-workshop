@@ -617,14 +617,20 @@ ingest_logs() {
     echo "File location: $FILE_LOCATION"
   fi
 
-  TENANT_DATA=$(jq -n --arg content "$(cat "$FILE_LOCATION")" '{"fileContent": $content}')
+  # Create temporary file with JSON payload
+  TEMP_FILE=$(mktemp)
+  cat "$FILE_LOCATION" | jq -Rs '{"fileContent": .}' > "$TEMP_FILE"
 
   RESPONSE=$(curl --request POST \
     --url "${API_GATEWAY_URL}upload-logs" \
     --header "Authorization: Bearer ${ID_TOKEN}" \
     --header 'content-type: application/json' \
-    --data "$TENANT_DATA" \
+    --data @"$TEMP_FILE" \
     --silent)
+
+  # Clean up temporary file
+  rm "$TEMP_FILE"
+
 
   echo $RESPONSE
 }

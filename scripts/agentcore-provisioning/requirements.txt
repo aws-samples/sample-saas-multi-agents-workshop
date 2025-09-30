@@ -3,3 +3,4 @@ bedrock_agentcore_starter_toolkit
 bedrock_agentcore
 rich
 jwt
+requests
