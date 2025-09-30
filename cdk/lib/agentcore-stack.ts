@@ -35,29 +35,8 @@ export class AgentCoreStack extends cdk.NestedStack {
     // Import existing Athena results bucket
     const athenaResultsBucket = s3.Bucket.fromBucketName(this, "AthenaResultsBucket", props.athenaResultsBucketName);
 
-    // Create Pre Token Generation Lambda
-    const preTokenGenerationLambda = new lambda.Function(
-      this,
-      "PreTokenGenerationLambda",
-      {
-        runtime: lambda.Runtime.PYTHON_3_12,
-        handler: "index.handler",
-        code: lambda.Code.fromAsset(
-          path.join(__dirname, "../lambda/access-token-modifier")
-        ),
-        description:
-          "Pre Token Generation trigger to add custom attributes to tokens",
-      }
-    );
-
     // Use the existing user pool from props
     const userPool = props.userPool;
-
-    userPool.addTrigger(
-      cognito.UserPoolOperation.PRE_TOKEN_GENERATION_CONFIG,
-      preTokenGenerationLambda,
-      cognito.LambdaVersion.V2_0
-    );    
 
     // Use the props
     const kbId = props.kbId;

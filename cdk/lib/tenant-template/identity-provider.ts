@@ -4,6 +4,8 @@
 import { aws_cognito, StackProps, Duration } from "aws-cdk-lib";
 import { Construct } from "constructs";
 import { IdentityDetails } from "../interfaces/identity-details";
+import * as lambda from "aws-cdk-lib/aws-lambda";
+import * as path from "path";
 
 export class IdentityProvider extends Construct {
   public readonly tenantUserPool: aws_cognito.UserPool;
@@ -30,6 +32,28 @@ export class IdentityProvider extends Construct {
         }),
       },
     });
+
+    // Create Pre Token Generation Lambda
+    const preTokenGenerationLambda = new lambda.Function(
+      this,
+      "PreTokenGenerationLambda",
+      {
+        runtime: lambda.Runtime.PYTHON_3_12,
+        handler: "index.handler",
+        code: lambda.Code.fromAsset(
+          path.join(__dirname, "../../lambda/access-token-modifier")
+        ),
+        description:
+          "Pre Token Generation trigger to add custom attributes to tokens",
+      }
+    );
+
+    // Add the trigger to the user pool
+    this.tenantUserPool.addTrigger(
+      aws_cognito.UserPoolOperation.PRE_TOKEN_GENERATION_CONFIG,
+      preTokenGenerationLambda,
+      aws_cognito.LambdaVersion.V2_0
+    );
 
     const writeAttributes = new aws_cognito.ClientAttributes()
       .withStandardAttributes({ email: true })
