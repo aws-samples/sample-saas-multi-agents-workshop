@@ -1,5 +1,5 @@
 boto3
-bedrock_agentcore_starter_toolkit
+bedrock_agentcore_starter_toolkit==0.1.14 #https://github.com/aws/bedrock-agentcore-starter-toolkit/issues/236
 bedrock_agentcore
 rich
 jwt
