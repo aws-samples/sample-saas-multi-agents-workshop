@@ -79,7 +79,7 @@ def log_agent_tool(query: str) -> str:
         )
 
         try:
-            agent_response = log_agent(f"Execute this log query for tenant {tenant_id}: {query}")
+            agent_response = log_agent(f"Execute this log query: {query}")
             text_response = str(agent_response)
 
             if len(text_response) > 0:

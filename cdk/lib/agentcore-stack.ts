@@ -550,6 +550,17 @@ private createKbMcpHandlerLambda(kbId: string) {
                 `arn:aws:bedrock-agentcore:${this.region}:${this.account}:workload-identity-directory/default/workload-identity/ops_agent-*`,
               ],
             }),
+            // Bedrock AgentCore Code Execution Permission
+            new iam.PolicyStatement({
+              sid: "BedrockAgentCoreCodeExecutionPolicy",
+              actions: ["bedrock-agentcore:StartCodeInterpreterSession",
+                "bedrock-agentcore:StopCodeInterpreterSession",
+                "bedrock-agentcore:InvokeCodeInterpreter"
+              ],
+              resources: [
+                `arn:aws:bedrock-agentcore:${this.region}:aws:code-interpreter/aws.codeinterpreter.v1`,
+              ],
+            }),              
             // Bedrock AgentCore Identity OAuth2
             new iam.PolicyStatement({
               sid: "BedrockAgentCoreIdentityGetResourceOauth2Token",
