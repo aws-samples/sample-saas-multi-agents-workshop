@@ -47,10 +47,12 @@ def log_agent_tool(query: str) -> str:
             
         system_prompt = """You are a log analysis agent that searches tenant application logs using Amazon Athena-compatible SQL queries.
 
+        IMPORTANT: You are querying logs for tenant: {tenant_id}
+        All queries MUST include 'WHERE tenant_id = '{tenant_id}'' for security and performance.
+
         TENANT_LOGS SCHEMA:
         - timestamp (string): Log timestamp in ISO format
         - level (string): Log level (INFO, ERROR, WARN, DEBUG)
-        - tenant (string): Tenant identifier
         - environment (string): Environment name
         - component (string): Application component
         - correlation_id (string): Request correlation ID
@@ -79,7 +81,7 @@ def log_agent_tool(query: str) -> str:
         )
 
         try:
-            agent_response = log_agent(f"Execute this log query: {query}")
+            agent_response = log_agent(f"Execute this log query for tenant {tenant_id}: {query}")
             text_response = str(agent_response)
 
             if len(text_response) > 0:
