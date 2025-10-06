@@ -88,21 +88,35 @@ def destroy_gateway(name):
     logger.info(f"Destroying gateway: {name}")
     agentcore = boto3.client("bedrock-agentcore-control")
 
-    gateways = agentcore.list_gateways()["items"]
-    gateway = next((g for g in gateways if g["name"] == name), None)
+    try:
+        gateways = agentcore.list_gateways()["items"]
+        gateway = next((g for g in gateways if g["name"] == name), None)
 
-    if gateway:
-        gateway_id = gateway["gatewayId"]
+        if gateway:
+            gateway_id = gateway["gatewayId"]
+            logger.info(f"Found gateway {name} with ID: {gateway_id}")
 
-        # Delete all targets first
-        targets = agentcore.list_gateway_targets(gatewayIdentifier=gateway_id)["items"]
-        for target in targets:
-            agentcore.delete_gateway_target(
-                gatewayIdentifier=gateway_id, targetId=target["targetId"]
-            )
+            # Delete all targets first
+            try:
+                targets = agentcore.list_gateway_targets(gatewayIdentifier=gateway_id)["items"]
+                for target in targets:
+                    logger.info(f"Deleting target: {target['name']}")
+                    agentcore.delete_gateway_target(
+                        gatewayIdentifier=gateway_id, targetId=target["targetId"]
+                    )
+            except Exception as e:
+                logger.warning(f"Error deleting targets for gateway {name}: {e}")
 
-        # Delete gateway
-        agentcore.delete_gateway(gatewayIdentifier=gateway_id)
+            # Delete gateway
+            try:
+                agentcore.delete_gateway(gatewayIdentifier=gateway_id)
+                logger.info(f"Gateway {name} deletion initiated")
+            except Exception as e:
+                logger.error(f"Error deleting gateway {name}: {e}")
+        else:
+            logger.info(f"Gateway {name} not found, skipping deletion")
+    except Exception as e:
+        logger.error(f"Error during gateway {name} destruction: {e}")
 
 
 def destroy_oauth_provider():
@@ -162,6 +176,75 @@ def destroy_agentcore_runtime():
 
 
 
+def wait_for_gateway_active(agentcore, gateway_id, max_wait_time=300):
+    """Wait for gateway to be in READY status before proceeding"""
+    logger.info(f"Waiting for gateway {gateway_id} to be READY...")
+    start_time = time.time()
+    
+    while time.time() - start_time < max_wait_time:
+        try:
+            response = agentcore.get_gateway(gatewayIdentifier=gateway_id)
+            status = response.get("status", "UNKNOWN")
+            logger.info(f"Gateway {gateway_id} status: {status}")
+            
+            if status == "READY":
+                logger.info(f"Gateway {gateway_id} is now READY")
+                return True
+            elif status in ["FAILED", "DELETED"]:
+                logger.error(f"Gateway {gateway_id} is in failed state: {status}")
+                return False
+            
+            # Wait before checking again
+            time.sleep(10)
+            
+        except Exception as e:
+            logger.warning(f"Error checking gateway status: {e}")
+            time.sleep(10)
+    
+    logger.error(f"Gateway {gateway_id} did not become READY within {max_wait_time} seconds")
+    return False
+
+
+def create_gateway_target_with_retry(agentcore, gateway_id, target_name, target_config, max_retries=5):
+    """Create gateway target with exponential backoff retry logic"""
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"Creating {target_name} (attempt {attempt + 1}/{max_retries})...")
+            agentcore.create_gateway_target(**target_config)
+            logger.info(f"{target_name} created successfully")
+            return True
+            
+        except Exception as e:
+            error_msg = str(e)
+            logger.warning(f"Attempt {attempt + 1} failed for {target_name}: {error_msg}")
+            
+            if "CREATING" in error_msg or "ValidationException" in error_msg:
+                # Gateway is still creating or in invalid state, wait with exponential backoff
+                wait_time = min(30, 5 * (2 ** attempt))  # Cap at 30 seconds
+                logger.warning(f"Gateway not ready, waiting {wait_time} seconds before retry {attempt + 1}/{max_retries}")
+                time.sleep(wait_time)
+                
+                # Check gateway status again
+                if not wait_for_gateway_active(agentcore, gateway_id, max_wait_time=60):
+                    logger.error(f"Gateway {gateway_id} failed to become READY during retry")
+                    if attempt == max_retries - 1:
+                        raise Exception(f"Gateway {gateway_id} never became READY after {max_retries} attempts")
+                    continue
+            elif "already exists" in error_msg.lower():
+                # Target already exists, this is actually success
+                logger.info(f"{target_name} already exists, continuing...")
+                return True
+            else:
+                # Different error, log and potentially retry
+                logger.error(f"Failed to create {target_name}: {error_msg}")
+                if attempt == max_retries - 1:
+                    raise
+                # Short wait before retry for other errors
+                time.sleep(5)
+    
+    raise Exception(f"Failed to create {target_name} after {max_retries} attempts")
+
+
 def create_log_mcp_server(
     role_arn,
     user_pool_id,
@@ -199,14 +282,22 @@ def create_log_mcp_server(
             exceptionLevel="DEBUG",
         )
         gateway_id = response["gatewayId"]
+        
+        # Wait for gateway to be ready before creating targets
+        if not wait_for_gateway_active(agentcore, gateway_id):
+            raise Exception(f"Gateway {gateway_id} failed to become READY")
+    else:
+        # Even if gateway exists, make sure it's ready
+        if not wait_for_gateway_active(agentcore, gateway_id):
+            raise Exception(f"Existing gateway {gateway_id} is not in READY state")
 
     targets = agentcore.list_gateway_targets(gatewayIdentifier=gateway_id)["items"]
     if not next((t for t in targets if t["name"] == "LogSearchTarget"), None):
-        agentcore.create_gateway_target(
-            gatewayIdentifier=gateway_id,
-            name="LogSearchTarget",
-            description="Searches tenant application logs using Amazon Athena-compatible queries",
-            targetConfiguration={
+        target_config = {
+            "gatewayIdentifier": gateway_id,
+            "name": "LogSearchTarget",
+            "description": "Searches tenant application logs using Amazon Athena-compatible queries",
+            "targetConfiguration": {
                 "mcp": {
                     "lambda": {
                         "lambdaArn": log_lambda_arn,
@@ -235,10 +326,11 @@ def create_log_mcp_server(
                     }
                 }
             },
-            credentialProviderConfigurations=[
+            "credentialProviderConfigurations": [
                 {"credentialProviderType": "GATEWAY_IAM_ROLE"}
             ],
-        )
+        }
+        create_gateway_target_with_retry(agentcore, gateway_id, "LogSearchTarget", target_config)
 
     return gateway_id
 
@@ -280,15 +372,22 @@ def create_kb_mcp_server(
             exceptionLevel="DEBUG",
         )
         gateway_id = response["gatewayId"]
+        
+        # Wait for gateway to be ready before creating targets
+        if not wait_for_gateway_active(agentcore, gateway_id):
+            raise Exception(f"Gateway {gateway_id} failed to become READY")
+    else:
+        # Even if gateway exists, make sure it's ready
+        if not wait_for_gateway_active(agentcore, gateway_id):
+            raise Exception(f"Existing gateway {gateway_id} is not in READY state")
 
     targets = agentcore.list_gateway_targets(gatewayIdentifier=gateway_id)["items"]
     if not next((t for t in targets if t["name"] == "KBSearchTarget"), None):
-        logger.info("Creating KBSearchTarget")
-        agentcore.create_gateway_target(
-            gatewayIdentifier=gateway_id,
-            name="KBSearchTarget",
-            description="Searches knowledge base using natural language queries",
-            targetConfiguration={
+        target_config = {
+            "gatewayIdentifier": gateway_id,
+            "name": "KBSearchTarget",
+            "description": "Searches knowledge base using natural language queries",
+            "targetConfiguration": {
                 "mcp": {
                     "lambda": {
                         "lambdaArn": kb_lambda_arn,
@@ -321,11 +420,11 @@ def create_kb_mcp_server(
                     }
                 }
             },
-            credentialProviderConfigurations=[
+            "credentialProviderConfigurations": [
                 {"credentialProviderType": "GATEWAY_IAM_ROLE"}
             ],
-        )
-        logger.info("KBSearchTarget Created")
+        }
+        create_gateway_target_with_retry(agentcore, gateway_id, "KBSearchTarget", target_config)
     return gateway_id
 
 
