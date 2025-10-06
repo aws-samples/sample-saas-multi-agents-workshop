@@ -283,6 +283,7 @@ def create_kb_mcp_server(
 
     targets = agentcore.list_gateway_targets(gatewayIdentifier=gateway_id)["items"]
     if not next((t for t in targets if t["name"] == "KBSearchTarget"), None):
+        logger.info("Creating KBSearchTarget")
         agentcore.create_gateway_target(
             gatewayIdentifier=gateway_id,
             name="KBSearchTarget",
@@ -324,7 +325,7 @@ def create_kb_mcp_server(
                 {"credentialProviderType": "GATEWAY_IAM_ROLE"}
             ],
         )
-
+        logger.info("KBSearchTarget Created")
     return gateway_id
 
 
