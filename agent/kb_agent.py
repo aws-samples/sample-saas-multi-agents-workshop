@@ -4,6 +4,8 @@ from strands import Agent
 from strands.tools.mcp.mcp_client import MCPClient
 import logging
 import os
+from botocore.config import Config as BotocoreConfig
+from strands.models import BedrockModel
 
 import wrapped_tool
 import ops_context
@@ -14,6 +16,9 @@ import ops_context
 log = logging.Logger(__name__)
 log.level = logging.DEBUG
 
+boto_cfg = BotocoreConfig(
+    retries={"total_max_attempts": 10, "mode": "standard"}  # exponential backoff
+)
 
 @tool(name="query_kb", description="This tool searches Amazon Bedrock Knowledge base.")
 def kb_agent_tool(query: str, top_k: int = 5) -> str:
@@ -54,7 +59,12 @@ def kb_agent_tool(query: str, top_k: int = 5) -> str:
             name="kb_agent",
             system_prompt=f"""You are a knowledge base agent that searches Amazon Bedrock Knowledge base for solutions to application errors.""",
             tools=tools,
-            model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            #model_id="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            #model_id="us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+            model=BedrockModel(
+                model_id="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+                boto_client_config=boto_cfg,
+            )
         )
 
         try:

@@ -1,6 +1,8 @@
 from mcp.client.streamable_http import streamablehttp_client
 from strands.tools.mcp.mcp_client import MCPClient
 from strands import Agent, tool
+from botocore.config import Config as BotocoreConfig
+from strands.models import BedrockModel
 
 import logging
 import ops_context
@@ -9,6 +11,10 @@ import constants
 
 log = logging.Logger(__name__)
 log.level = logging.DEBUG
+
+boto_cfg = BotocoreConfig(
+    retries={"total_max_attempts": 10, "mode": "standard"}  # exponential backoff
+)
 
 @tool(name="query_logs", description="This tool allows you to query tenant application logs using Amazon Athena-compatible queries")
 def log_agent_tool(query: str) -> str:
@@ -47,9 +53,6 @@ def log_agent_tool(query: str) -> str:
             
         system_prompt = """You are a log analysis agent that searches tenant application logs using Amazon Athena-compatible SQL queries.
 
-        IMPORTANT: You are querying logs for tenant: {tenant_id}
-        All queries MUST include 'WHERE tenant_id = '{tenant_id}'' for security and performance.
-
         TENANT_LOGS SCHEMA:
         - timestamp (string): Log timestamp in ISO format
         - level (string): Log level (INFO, ERROR, WARN, DEBUG)
@@ -60,8 +63,8 @@ def log_agent_tool(query: str) -> str:
         - event (string): Event type/name
         - path (string): Request path
         - job (string): Job identifier
+        - tenant_id (string): tenant_id
         - status (string): Status code/message
-        - entity_id (string): Entity identifier
         - detail (string): Detailed log message
 
         QUERY EXAMPLES:
@@ -71,17 +74,23 @@ def log_agent_tool(query: str) -> str:
         4. Count errors by component: SELECT component, COUNT(*) as error_count FROM tenant_logs WHERE level = 'ERROR' GROUP BY component
         5. Recent errors: SELECT * FROM tenant_logs WHERE level = 'ERROR' ORDER BY timestamp DESC LIMIT 10
 
-        Focus on finding errors and patterns that help troubleshoot issues."""
+        IF REQUESTED TO RETURN EXACT LOG ENTRIES - RETURN THEM TO THE CALLER.
+        """
 
         log_agent = Agent(
             name="log_agent",
             system_prompt=system_prompt,
             tools=tools,
-            model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            #model_id="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            #model_id="us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+            model=BedrockModel(
+                model_id="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+                boto_client_config=boto_cfg,
+            )
         )
 
         try:
-            agent_response = log_agent(f"Execute this log query for tenant {tenant_id}: {query}")
+            agent_response = log_agent(f"Execute this log query: {query}")
             text_response = str(agent_response)
 
             if len(text_response) > 0:

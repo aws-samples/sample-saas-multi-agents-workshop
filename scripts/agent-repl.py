@@ -70,8 +70,8 @@ def get_access_token() -> Tuple[str, str]:
     logger.debug(f"Using client: {user_client_id}")
 
     # Prompt for credentials
-    username = input("Username (testuser): ").strip() or "testuser"
-    password = getpass.getpass("Password (TempPassword123!): ") or "SaaS123!"
+    username = input("Username (admin+tenant1@example.com): ").strip() or "admin+tenant1@example.com"
+    password = getpass.getpass("Password (SaaS123!): ") or "SaaS123!"
 
     logger.debug("Authenticating with Cognito")
 

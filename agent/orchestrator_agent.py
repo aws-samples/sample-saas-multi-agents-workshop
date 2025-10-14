@@ -7,8 +7,14 @@ from kb_agent import kb_agent_tool
 from bedrock_agentcore.tools.code_interpreter_client import code_session
 import asyncio
 import jwt
+from botocore.config import Config as BotocoreConfig
+from strands.models import BedrockModel
 
 from metrics_manager import record_metric
+
+boto_cfg = BotocoreConfig(
+    retries={"total_max_attempts": 10, "mode": "standard"}  # exponential backoff
+)
 
 # Define and configure the code interpreter tool
 @tool(name="executePython", description="Execute Python code")
@@ -47,14 +53,20 @@ class OrchestratorAgent:
 
             Optimized Workflow:
             1. Search knowledge base using kb_agent
-            2. IF knowledge base provides credible, complete answer - STOP and return that solution (saves time/resources)
-            3. IF no solution found, query logs using log_agent (filter for recent errors)
+            2. IF knowledge base provides an answer - STOP and return that solution (saves time/resources)
+            3. ONLY IF no solution found, query logs using log_agent
             4. Generate Python code solutions and test with executePython (Python code execution environment)
 
-            Prioritize knowledge base answers as they are assumed credible and complete.""",
+            Prioritize knowledge base answers as they are assumed credible and complete.
+            Return raw logs if requested by the user.""",
 
             tools=[log_agent_tool, kb_agent_tool, execute_python],
-            model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            #model_id="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            #model_id="us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+            model=BedrockModel(
+                model_id="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+                boto_client_config=boto_cfg,
+            )
         )
 
     def invoke(self, user_query: str):

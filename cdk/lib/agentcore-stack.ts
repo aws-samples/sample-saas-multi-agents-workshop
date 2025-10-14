@@ -52,15 +52,14 @@ export class AgentCoreStack extends cdk.NestedStack {
     const userClient = this.createUserClient(userPool);
     const m2mClient = this.createM2MClient({ userPool, ...resourceServerInfo });
 
+    // ========== TODO LAB 2: TO ENABLE ABAC ==========
+    // COMMENT OUT:
     const logMcpHandlerRole = this.createLogMcpHandlerRole(s3BucketName, props.athenaResultsBucketName, props.athenaDatabase, props.athenaTable, props.athenaWorkgroup);
-    // LAB 2: Uncomment this line to create a basic role for ABAC
-    // const abacRole = this.createLogMcpHandlerBasicRole();
-
-    // LAB 2: Uncomment this line to create the ABAC role
-    // const abacRole = this.createAbacRole(s3BucketName, athenaResultsBucketName);
-
-    // LAB 2: Switch between logMcpHandlerRole (current) and abacRole to enable ABAC within the Lambda function
     const logMcpLambda = this.createLogMcpHandlerLambda(s3BucketName, props.athenaResultsBucketName, props.athenaDatabase, props.athenaTable, props.athenaWorkgroup, logMcpHandlerRole);
+    // UNCOMMENT:
+    // const basicRole = this.createLogMcpHandlerBasicRole();
+    // const abacRole = this.createAbacRole(basicRole, s3BucketName, props.athenaResultsBucketName, props.athenaDatabase, props.athenaTable, props.athenaWorkgroup);
+    // const logMcpLambda = this.createLogMcpHandlerLambda(s3BucketName, props.athenaResultsBucketName, props.athenaDatabase, props.athenaTable, props.athenaWorkgroup, basicRole, abacRole);
     const kbMcpLambda = this.createKbMcpHandlerLambda(kbId);
 
     // Create IAM role for AgentCore Gateway
@@ -132,9 +131,7 @@ export class AgentCoreStack extends cdk.NestedStack {
     });    
   }
 
-
-
-// LAB 2: Basic Role - Uncomment to enable ABAC
+// TODO: LAB 2: Uncomment both methods below when enabling ABAC
 /*
 private createLogMcpHandlerBasicRole(): iam.Role {
   return new iam.Role(this, "LogMcpHandlerBasicRole", {
@@ -146,21 +143,18 @@ private createLogMcpHandlerBasicRole(): iam.Role {
       AssumeAbacRole: new iam.PolicyDocument({
         statements: [
           new iam.PolicyStatement({
-            actions: ["sts:AssumeRole"],
-            resources: [`arn:aws:iam::${this.account}:role/LogMcpHandlerAbacRole`]
+            actions: ["sts:AssumeRole", "sts:TagSession"],
+            resources: [`arn:aws:iam::${this.account}:role/*LogMcpHandlerAbacRole*`]
           })
         ]
       })
     }
   });
 }
-*/
 
-// LAB 2: ABAC Role - Uncomment to enable ABAC
-/*
-private createAbacRole(s3BucketName: string, athenaResultsBucketName: string, athenaDatabase: string, athenaTable: string, athenaWorkgroup: string): iam.Role {
-  return new iam.Role(this, "LogMcpHandlerAbacRole", {
-    assumedBy: new iam.ArnPrincipal(`arn:aws:iam::${this.account}:role/LogMcpHandlerBasicRole`),
+private createAbacRole(basicRole: iam.Role, s3BucketName: string, athenaResultsBucketName: string, athenaDatabase: string, athenaTable: string, athenaWorkgroup: string): iam.Role {
+  const role = new iam.Role(this, "LogMcpHandlerAbacRole", {
+    assumedBy: new iam.ArnPrincipal(basicRole.roleArn),
     inlinePolicies: {
       TenantSpecificAccess: new iam.PolicyDocument({
         statements: [
@@ -226,6 +220,20 @@ private createAbacRole(s3BucketName: string, athenaResultsBucketName: string, at
       })
     }
   });
+  
+  const cfnRole = role.node.defaultChild as iam.CfnRole;
+  cfnRole.assumeRolePolicyDocument = {
+    Version: "2012-10-17",
+    Statement: [
+      {
+        Effect: "Allow",
+        Principal: { AWS: basicRole.roleArn },
+        Action: ["sts:AssumeRole", "sts:TagSession"]
+      }
+    ]
+  };
+  
+  return role;
 }
 */
   
@@ -302,7 +310,26 @@ private createLogMcpHandlerRole(s3BucketName: string, athenaResultsBucketName: s
   });
 }
 
-private createLogMcpHandlerLambda(s3BucketName: string, athenaResultsBucketName: string, athenaDatabase: string, athenaTable: string, athenaWorkgroup: string, role: iam.Role) {
+private createSqlModifierLayer(): lambda.LayerVersion {
+  return new lambda.LayerVersion(this, "SqlModifierLayer", {
+    layerVersionName: "sql-modifier-layer",
+    code: lambda.Code.fromAsset(path.join(__dirname, "../lambda/layers/sql-modifier")),
+    compatibleRuntimes: [lambda.Runtime.PYTHON_3_12],
+    description: "Layer containing SQL modifier utilities for tenant filtering"
+  });
+}
+
+
+private createLogMcpHandlerLambda(s3BucketName: string, athenaResultsBucketName: string, athenaDatabase: string, athenaTable: string, athenaWorkgroup: string, role: iam.Role, abacRole?: iam.Role) {
+  const sqlModifierLayer = this.createSqlModifierLayer();
+  const env: Record<string, string> = {
+    ATHENA_DATABASE: athenaDatabase,
+    ATHENA_TABLE: athenaTable,
+    ATHENA_WORKGROUP: athenaWorkgroup,
+    ATHENA_OUTPUT: `s3://${athenaResultsBucketName}/athena-output/`
+  };
+  if (abacRole) env.ABAC_ROLE_ARN = abacRole.roleArn;
+
   return new lambda.Function(this, "LogMcpHandler", {
     functionName: "AgentCore-LogMcpHandler",
     description: "Lambda function handler for the log MCP server with Athena query capabilities",
@@ -312,14 +339,8 @@ private createLogMcpHandlerLambda(s3BucketName: string, athenaResultsBucketName:
     role: role,
     timeout: cdk.Duration.seconds(60),
     memorySize: 512,
-    environment: {
-      ATHENA_DATABASE: athenaDatabase,
-      ATHENA_TABLE: athenaTable,
-      ATHENA_WORKGROUP: athenaWorkgroup,
-      ATHENA_OUTPUT: `s3://${athenaResultsBucketName}/athena-output/`
-      // LAB 2: Uncomment this line for ABAC
-      // ABAC_ROLE_ARN: abacRole.roleArn      
-    }
+    layers: [sqlModifierLayer],
+    environment: env
   });
 }
 
