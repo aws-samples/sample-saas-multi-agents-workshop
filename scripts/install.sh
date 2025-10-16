@@ -127,6 +127,30 @@ if [[ "$STACK_OPERATION" == "create" || "$STACK_OPERATION" == "update" ]]; then
 elif [[ "$STACK_OPERATION" == "delete" ]]; then
     echo "Performing delete operation..."
     
+    # Clean up AgentCore resources first
+    echo "Cleaning up AgentCore resources..."
+    cd "$SCRIPT_DIR"
+    
+    AGENTCORE_PROVISIONING_SCRIPT="agentcore-provisioning/deploy-agentcore.py"
+    REQUIREMENTS_FILE="agentcore-provisioning/requirements.txt"
+    
+    # Install required packages if requirements file exists
+    if [ -f "$REQUIREMENTS_FILE" ]; then
+        pip3 install -r "$REQUIREMENTS_FILE"
+    fi
+    
+    # Run AgentCore cleanup
+    python3 "$AGENTCORE_PROVISIONING_SCRIPT" --destroy
+    
+    if [ $? -eq 0 ]; then
+        echo "AgentCore cleanup completed successfully"
+    else
+        echo "Warning: AgentCore cleanup failed, but continuing with stack deletion"
+    fi
+    
+    # Return to cdk directory for stack operations
+    cd "$FOLDER_PATH/cdk"
+    
     # Get S3 bucket URL before deleting stacks
     S3_TENANT_SOURCECODE_BUCKET_URL=$(aws cloudformation describe-stacks --stack-name saas-genai-workshop-common-resources --query "Stacks[0].Outputs[?OutputKey=='TenantSourceCodeS3Bucket'].OutputValue" --output text 2>/dev/null || echo "")
     

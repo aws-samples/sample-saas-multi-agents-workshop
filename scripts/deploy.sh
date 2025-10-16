@@ -1,3 +1,10 @@
+#!/bin/bash -e
+
+shopt -s expand_aliases
+source ~/.bashrc
+
+export CDK_PARAM_SYSTEM_ADMIN_EMAIL="admin@example.com"
+
 # Check if stack name parameter is provided
 if [ $# -ne 1 ]; then
     echo "Usage: $0 <STACK_NAME>"
