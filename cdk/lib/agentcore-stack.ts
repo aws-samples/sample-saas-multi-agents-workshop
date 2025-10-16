@@ -485,10 +485,10 @@ private createKbMcpHandlerLambda(kbId: string) {
             new iam.PolicyStatement({
               sid: "MarketplaceOperationsFromBedrockFor3pModels",
               actions: [
-        "aws-marketplace:Subscribe",
-        "aws-marketplace:ViewSubscriptions",
-        "aws-marketplace:Unsubscribe"
-      ],
+                "aws-marketplace:Subscribe",
+                "aws-marketplace:ViewSubscriptions",
+                "aws-marketplace:Unsubscribe"
+              ],
               resources: ["*"],      
               conditions : {
                 StringEquals : {
