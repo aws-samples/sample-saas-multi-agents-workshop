@@ -481,6 +481,21 @@ private createKbMcpHandlerLambda(kbId: string) {
               actions: ["ecr:GetAuthorizationToken"],
               resources: ["*"],
             }),
+            // ECR Token Access
+            new iam.PolicyStatement({
+              sid: "MarketplaceOperationsFromBedrockFor3pModels",
+              actions: [
+        "aws-marketplace:Subscribe",
+        "aws-marketplace:ViewSubscriptions",
+        "aws-marketplace:Unsubscribe"
+      ],
+              resources: ["*"],      
+              conditions : {
+                StringEquals : {
+                  "aws:CalledViaLast" : "bedrock.amazonaws.com"
+                },
+              },
+            }),
             // CloudWatch Logs
             new iam.PolicyStatement({
               actions: [
