@@ -126,43 +126,17 @@ if [[ "$STACK_OPERATION" == "create" || "$STACK_OPERATION" == "update" ]]; then
     
 elif [[ "$STACK_OPERATION" == "delete" ]]; then
     echo "Performing delete operation..."
+    echo "Delegating to cleanup script for comprehensive resource cleanup..."
     
-    # Clean up AgentCore resources first
-    echo "Cleaning up AgentCore resources..."
-    cd "$SCRIPT_DIR"
-    
-    AGENTCORE_PROVISIONING_SCRIPT="agentcore-provisioning/deploy-agentcore.py"
-    REQUIREMENTS_FILE="agentcore-provisioning/requirements.txt"
-    
-    # Install required packages if requirements file exists
-    if [ -f "$REQUIREMENTS_FILE" ]; then
-        pip3 install -r "$REQUIREMENTS_FILE"
-    fi
-    
-    # Run AgentCore cleanup
-    python3 "$AGENTCORE_PROVISIONING_SCRIPT" --destroy
+    # Call the dedicated cleanup script
+    "$SCRIPT_DIR/cleanup.sh" "$CDK_PARAM_SYSTEM_ADMIN_EMAIL"
     
     if [ $? -eq 0 ]; then
-        echo "AgentCore cleanup completed successfully"
+        echo "Delete operation completed successfully"
     else
-        echo "Warning: AgentCore cleanup failed, but continuing with stack deletion"
+        echo "Delete operation completed with warnings. Please check the output above for any manual cleanup required."
+        exit 1
     fi
-    
-    # Return to cdk directory for stack operations
-    cd "$FOLDER_PATH/cdk"
-    
-    # Get S3 bucket URL before deleting stacks
-    S3_TENANT_SOURCECODE_BUCKET_URL=$(aws cloudformation describe-stacks --stack-name saas-genai-workshop-common-resources --query "Stacks[0].Outputs[?OutputKey=='TenantSourceCodeS3Bucket'].OutputValue" --output text 2>/dev/null || echo "")
-    
-    if [[ -n "$S3_TENANT_SOURCECODE_BUCKET_URL" ]]; then
-        echo "Emptying S3 bucket: $S3_TENANT_SOURCECODE_BUCKET_URL"
-        aws s3 rm "s3://$S3_TENANT_SOURCECODE_BUCKET_URL" --recursive
-    fi
-    
-    # Destroy all stacks
-    npx cdk destroy --all --force
-    
-    echo "Delete operation completed successfully"
     
 else
     echo "Invalid stack operation: $STACK_OPERATION_ORIG"

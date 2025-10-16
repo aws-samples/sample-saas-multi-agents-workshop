@@ -22,6 +22,7 @@ handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)
 logger.handlers = [handler]
 logger.propagate = False
 
+region = os.environ.get("AWS_REGION", "AWS_DEFAULT_REGION")
 
 def get_stack_outputs():
     """
@@ -46,7 +47,7 @@ def get_stack_outputs():
     
     # Fallback to CloudFormation API - try the nested stack first
     logger.info("Environment variables not set, falling back to CloudFormation API")
-    cf = boto3.client("cloudformation")
+    cf = boto3.client("cloudformation",region_name=region)
     
     try:
         # Try to get from the common resources stack first (new approach)
@@ -86,7 +87,7 @@ def get_stack_outputs():
 
 def destroy_gateway(name):
     logger.info(f"Destroying gateway: {name}")
-    agentcore = boto3.client("bedrock-agentcore-control")
+    agentcore = boto3.client("bedrock-agentcore-control",region_name=region)
 
     try:
         gateways = agentcore.list_gateways()["items"]
@@ -104,6 +105,11 @@ def destroy_gateway(name):
                     agentcore.delete_gateway_target(
                         gatewayIdentifier=gateway_id, targetId=target["targetId"]
                     )
+                
+                # Wait for all targets to be deleted before deleting gateway
+                if targets:
+                    wait_for_targets_deleted(agentcore, gateway_id, max_wait_time=300)
+                    
             except Exception as e:
                 logger.warning(f"Error deleting targets for gateway {name}: {e}")
 
@@ -122,7 +128,7 @@ def destroy_gateway(name):
 def destroy_oauth_provider():
     logger.info("Destroying OAuth2 credential provider")
     try:
-        agentcore = boto3.client("bedrock-agentcore-control")
+        agentcore = boto3.client("bedrock-agentcore-control",region_name=region)
         providers = agentcore.list_oauth2_credential_providers()
 
         for provider in providers.get("credentialProviders"):
@@ -139,7 +145,7 @@ def destroy_oauth_provider():
 
 def destroy_agentcore_runtime():
     logger.info("Destroying AgentCore Runtime")
-    agentcore = boto3.client("bedrock-agentcore-control")
+    agentcore = boto3.client("bedrock-agentcore-control",region_name=region)
     
     while True:
         try:
@@ -205,6 +211,34 @@ def wait_for_gateway_active(agentcore, gateway_id, max_wait_time=300):
     return False
 
 
+def wait_for_targets_deleted(agentcore, gateway_id, max_wait_time=300):
+    """Wait for all gateway targets to be deleted before proceeding with gateway deletion"""
+    logger.info(f"Waiting for all targets to be deleted from gateway {gateway_id}...")
+    start_time = time.time()
+    
+    while time.time() - start_time < max_wait_time:
+        try:
+            targets = agentcore.list_gateway_targets(gatewayIdentifier=gateway_id)["items"]
+            
+            if not targets:
+                logger.info(f"All targets have been deleted from gateway {gateway_id}")
+                return True
+            
+            logger.info(f"Gateway {gateway_id} still has {len(targets)} targets, waiting...")
+            
+            # Wait before checking again
+            time.sleep(10)
+            
+        except Exception as e:
+            # If we can't list targets, it might mean the gateway is already being deleted
+            # or there's a temporary issue - log and continue waiting
+            logger.warning(f"Error checking gateway targets: {e}")
+            time.sleep(10)
+    
+    logger.error(f"Gateway {gateway_id} targets were not deleted within {max_wait_time} seconds")
+    return False
+
+
 def create_gateway_target_with_retry(agentcore, gateway_id, target_name, target_config, max_retries=5):
     """Create gateway target with exponential backoff retry logic"""
     for attempt in range(max_retries):
@@ -255,7 +289,7 @@ def create_log_mcp_server(
     recreate=False,
 ):
     logger.info("1.1: Creating Log MCP Server")
-    agentcore = boto3.client("bedrock-agentcore-control")
+    agentcore = boto3.client("bedrock-agentcore-control",region_name=region)
 
     if recreate:
         destroy_gateway("LogGateway")
@@ -345,7 +379,7 @@ def create_kb_mcp_server(
     recreate=False,
 ):
     logger.info("1.2: Creating KB MCP Server")
-    agentcore = boto3.client("bedrock-agentcore-control")
+    agentcore = boto3.client("bedrock-agentcore-control",region_name=region)
 
     if recreate:
         destroy_gateway("KnowledgeBaseGateway")
@@ -471,7 +505,7 @@ def create_m2m_outbound_identity(
         identity_client = IdentityClient(region=region)
 
         # Check if a provider already exists
-        agentcore = boto3.client("bedrock-agentcore-control")
+        agentcore = boto3.client("bedrock-agentcore-control",region_name=region)
         providers = agentcore.list_oauth2_credential_providers()
 
         existing_provider = None
@@ -567,7 +601,7 @@ def create_agentcore_runtime(
         )
         logger.info(f"Agent ARN: {launch_result.agent_arn}")
 
-    agentcore = boto3.client("bedrock-agentcore-control")
+    agentcore = boto3.client("bedrock-agentcore-control",region_name=region)
     runtime_details = agentcore.get_agent_runtime(agentRuntimeId=launch_result.agent_id)
 
     agentcore.update_agent_runtime(
@@ -632,11 +666,10 @@ def main():
     role_arn = stack_outputs["AgentCoreRoleArn"]
     log_lambda_arn = stack_outputs["LogMcpLambdaArn"]
     kb_lambda_arn = stack_outputs["KbMcpLambdaArn"]
-    region = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
     discovery_url = f"https://cognito-idp.{region}.amazonaws.com/{user_pool_id}/.well-known/openid-configuration"
 
     # Check if resources exist and recreate if needed
-    agentcore = boto3.client("bedrock-agentcore-control")
+    agentcore = boto3.client("bedrock-agentcore-control",region_name=region)
     gateways = agentcore.list_gateways()["items"]
     log_exists = any(g["name"] == "LogGateway" for g in gateways)
     kb_exists = any(g["name"] == "KnowledgeBaseGateway" for g in gateways)
