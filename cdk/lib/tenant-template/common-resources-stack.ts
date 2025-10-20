@@ -20,6 +20,10 @@ import { ResourceNaming } from '../naming';
 import { BedrockKnowledgeBase } from '../constructs/bedrock-kb';
 import { AthenaStack } from '../athena-stack';
 import { AgentCoreStack } from '../agentcore-stack';
+import { CostPerTenant } from './cost-per-tenant';
+import { BedrockCustom } from './bedrock';
+import { CostUsageReportUpload } from './cur-report-upload';
+import { CurAthena } from './cur-athena';
 
 interface CommonResourcesStackProps extends StackProps {
   readonly controlPlaneApiGwUrl: string;
@@ -183,9 +187,6 @@ export class CommonResourcesStack extends Stack {
       entry: path.join(__dirname, "services/layers/"),
       compatibleRuntimes: [lambda.Runtime.PYTHON_3_12],
       compatibleArchitectures: [lambda.Architecture.ARM_64],
-      bundling: {
-        platform: "linux/arm64",
-      },
     });
 
 
@@ -207,37 +208,41 @@ export class CommonResourcesStack extends Stack {
       utilsLayer: utilsLayer,
     });
 
-        // const curS3Bucket = new Bucket(this, "SaaSGenAICURWorkshopBucket", {
-        //   autoDeleteObjects: true,
-        //   removalPolicy: RemovalPolicy.DESTROY,
-        // });
+    // *** CUR Code ***
+    const curS3Bucket = new Bucket(this, "SaaSGenAICURWorkshopBucket", {
+      autoDeleteObjects: true,
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
 
-        //     const costPerTenant = new CostPerTenant(this, "CostPerTenant", {
-        //       lambdaPowerToolsLayer: lambdaPowerToolsLayer,
-        //       utilsLayer: utilsLayer,
-        //       modelInvocationLogGroupName: bedrockCustom.modelInvocationLogGroupName,
-        //       curDatabaseName: curDatabaseName,
-        //       tableName: curPrefix.toLowerCase(),
-        //       athenaOutputBucketName: curS3Bucket.bucketName,
-        //     });
+    // Create BedrockCustom construct first
+    const bedrockCustom = new BedrockCustom(this, "BedrockCustom");
+
+    const costPerTenant = new CostPerTenant(this, "CostPerTenant", {
+      lambdaPowerToolsLayer: lambdaPowerToolsLayer,
+      utilsLayer: utilsLayer,
+      modelInvocationLogGroupName: bedrockCustom.modelInvocationLogGroupName,
+      curDatabaseName: curDatabaseName,
+      tableName: curPrefix.toLowerCase(),
+      athenaOutputBucketName: curS3Bucket.bucketName,
+    });
         
-        //     const costUsageReportUpload = new CostUsageReportUpload(
-        //       this,
-        //       "CostUsageReportUpload",
-        //       {
-        //         curBucketName: curS3Bucket.bucketName,
-        //         folderName: curPrefix,
-        //       }
-        //     );
-        
-        //     const curAthena = new CurAthena(this, "CurAthena", {
-        //       curBucketName: curS3Bucket.bucketName,
-        //       folderName: curPrefix,
-        //       databaseName: curDatabaseName,
-        //     });
-        
-        //     curAthena.node.addDependency(costUsageReportUpload);
-    
+    const costUsageReportUpload = new CostUsageReportUpload(
+      this,
+      "CostUsageReportUpload",
+      {
+        curBucketName: curS3Bucket.bucketName,
+        folderName: curPrefix,
+      }
+    );
+
+    const curAthena = new CurAthena(this, "CurAthena", {
+      curBucketName: curS3Bucket.bucketName,
+      folderName: curPrefix,
+      databaseName: curDatabaseName,
+    });
+
+    curAthena.node.addDependency(costUsageReportUpload);
+    // *** CUR Code ***
     
     // Add comment explaining the data structure for tenant data in S3
     // Each tenant will have the following structure in S3:

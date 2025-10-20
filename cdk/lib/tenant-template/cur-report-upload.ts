@@ -25,7 +25,7 @@ export class CostUsageReportUpload extends Construct {
 
     // Deploy the local folder to the S3 bucket
     new s3deploy.BucketDeployment(this, "DeployCostUsageReports", {
-      sources: [s3deploy.Source.asset("../data/cur_report.zip")],
+      sources: [s3deploy.Source.asset("../data/cur_report_2025.zip")],
       destinationBucket: curBucketName,
       destinationKeyPrefix: folderName,
     });

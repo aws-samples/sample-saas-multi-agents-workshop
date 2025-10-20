@@ -1,7 +1,7 @@
 import json
 from aws_lambda_powertools import Metrics
 
-metrics = Metrics()
+metrics = Metrics(namespace="SmartResolve")
 
 def record_metric(tenant_id, metric_name, metric_unit, metric_value):
     """ Record the metric in CloudWatch using EMF format

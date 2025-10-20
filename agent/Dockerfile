@@ -1,4 +1,4 @@
-FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+FROM ghcr.io/astral-sh/uv:python3.11-bookworm-slim
 WORKDIR /app
 
 # Configure UV for container environment
@@ -18,8 +18,8 @@ RUN uv pip install aws-opentelemetry-distro>=0.10.1
 
 # Set AWS region environment variable
 
-ENV AWS_REGION=us-east-1
-ENV AWS_DEFAULT_REGION=us-east-1
+ENV AWS_REGION=us-west-2
+ENV AWS_DEFAULT_REGION=us-west-2
 
 
 # Signal that this is running in Docker for host binding logic

@@ -63,6 +63,14 @@ def get_stack_outputs():
                 mapped_outputs[key] = stack_outputs["TenantUserpoolId"]
             elif key == "UserClientId" and "UserPoolClientId" in stack_outputs:
                 mapped_outputs[key] = stack_outputs["UserPoolClientId"]
+            elif key == "M2MClientId" and "AgentCoreM2MClientId" in stack_outputs:
+                mapped_outputs[key] = stack_outputs["AgentCoreM2MClientId"]
+            elif key == "M2MClientSecret" and "AgentCoreM2MClientSecret" in stack_outputs:
+                mapped_outputs[key] = stack_outputs["AgentCoreM2MClientSecret"]
+            elif key == "LogMcpLambdaArn" and "AgentCoreLogMcpLambdaArn" in stack_outputs:
+                mapped_outputs[key] = stack_outputs["AgentCoreLogMcpLambdaArn"]
+            elif key == "KbMcpLambdaArn" and "AgentCoreKbMcpLambdaArn" in stack_outputs:
+                mapped_outputs[key] = stack_outputs["AgentCoreKbMcpLambdaArn"]
             elif key in stack_outputs:
                 mapped_outputs[key] = stack_outputs[key]
         
@@ -658,6 +666,9 @@ def main():
         return
 
     stack_outputs = get_stack_outputs()
+
+    print("Stack outputs:")
+    print(stack_outputs)
 
     user_pool_id = stack_outputs["UserPoolId"]
     user_client_id = stack_outputs["UserClientId"]

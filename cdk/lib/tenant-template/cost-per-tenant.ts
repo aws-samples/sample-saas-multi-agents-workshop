@@ -85,6 +85,18 @@ export class CostPerTenant extends Construct {
     tenantCostCalculatorLambdaExecRole.addToPolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
+        actions: [
+          "cloudwatch:ListMetrics",
+          "cloudwatch:GetMetricData",
+          "cloudwatch:GetMetricStatistics",
+        ],
+        resources: ["*"],
+      })
+    );
+
+    tenantCostCalculatorLambdaExecRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
         actions: ["cloudformation:ListStackResources"],
         resources: [`arn:aws:cloudformation:${region}:${accountId}:stack/*/*`],
       })
@@ -137,6 +149,7 @@ export class CostPerTenant extends Construct {
         functionName: "TenantCostCalculatorService",
         entry: path.join(__dirname, "services/aggregate-metrics/"),
         runtime: lambda.Runtime.PYTHON_3_12,
+        architecture: lambda.Architecture.ARM_64,
         index: "tenant_cost_calculator.py",
         handler: "calculate_cost_per_tenant",
         timeout: cdk.Duration.seconds(60),

@@ -38,6 +38,8 @@ class OrchestratorAgent:
         decoded = ops_context.decode_jwt_claims(bearer_token)
         self.tenant_id = decoded.get("tenantId")
 
+        print(self.tenant_id)
+
         self.agent = Agent(
             name="orchestrator",
             system_prompt="""You are the Orchestrator Agent for SmartResolve, a GenAI-powered autonomous intelligent resolution engine that revolutionizes technical support for organizations. This SaaS platform serves as a virtual agent, empowering on-call and technical teams to quickly identify, diagnose, and resolve complex technical issues by leveraging LLMs to analyze incidents, suggest troubleshooting steps, and provide actionable solutions in real time.
@@ -71,48 +73,43 @@ class OrchestratorAgent:
 
     def invoke(self, user_query: str):
         try:
-            response = str(self.agent(user_query))
+            result = self.agent(user_query)  # result is an AgentResult
+            usage = result.metrics.accumulated_usage or {}
+            input_tokens = int(usage.get("inputTokens", 0))
+            output_tokens = int(usage.get("outputTokens", 0))
+            total_tokens = int(usage.get("totalTokens", input_tokens + output_tokens))
 
-            # Log input and output tokens using the documented structure
-            if hasattr(response, 'metrics') and hasattr(response.metrics, 'accumulated_usage'):
-                accumulated_usage = response.metrics.accumulated_usage
-                
-                # Log input tokens
-                if 'inputTokens' in accumulated_usage:
-                    record_metric(self.tenant_id, "ModelInvocationInputTokens", "Count", accumulated_usage['inputTokens'])
-                
-                # Log output tokens  
-                if 'outputTokens' in accumulated_usage:
-                    record_metric(self.tenant_id, "ModelInvocationOutputTokens", "Count", accumulated_usage['outputTokens'])
+            # record metrics per your tenant
+            record_metric(self.tenant_id, "ModelInvocationInputTokens", "Count", input_tokens)
+            record_metric(self.tenant_id, "ModelInvocationOutputTokens", "Count", output_tokens)
+            record_metric(self.tenant_id, "ModelInvocationTotalTokens", "Count", total_tokens)
 
+            return str(result.message) if hasattr(result, "message") else str(result)
         except Exception as e:
             return f"Error invoking agent: {e}"
-        return response
-    
+
     async def stream(self, user_query: str):
         try:
-            # Decode JWT and yield claims as string representation
-            # header = ops_context.OpsContext.get_authorization_header_ctx()
-            # if not header:
-            #     raise Exception("Authorization header not found")
-            # claims = decode_jwt_claims(header)
-            # yield f"JWT Claims: {json.dumps(claims)}\n\n"
+            final_result = None
             async for event in self.agent.stream_async(user_query):
-                if "data" in event:
-                    # Only stream text chunks to the client
+                # Intermediate chunks
+                if isinstance(event, dict) and "data" in event:
                     yield event["data"]
+                
+                # Capture the final event (last one will have "result")
+                if isinstance(event, dict) and "result" in event:
+                    final_result = event["result"]  # This is the AgentResult object
 
-            # Log metrics after streaming completes
-            if event and hasattr(event, 'metrics') and hasattr(event.metrics, 'accumulated_usage'):
-                accumulated_usage = event.metrics.accumulated_usage
-                
-                # Log input tokens
-                if 'inputTokens' in accumulated_usage:
-                    record_metric(self.tenant_id, "ModelInvocationInputTokens", "Count", accumulated_usage['inputTokens'])
-                
-                # Log output tokens  
-                if 'outputTokens' in accumulated_usage:
-                    record_metric(self.tenant_id, "ModelInvocationOutputTokens", "Count", accumulated_usage['outputTokens'])
+            # After loop, extract metrics from AgentResult
+            if final_result is not None:
+                usage = final_result.metrics.accumulated_usage  # Dict with keys: inputTokens, outputTokens, totalTokens
+                input_tokens = int(usage.get("inputTokens", 0))
+                output_tokens = int(usage.get("outputTokens", 0))
+                total_tokens = int(usage.get("totalTokens", input_tokens + output_tokens))
+
+                record_metric(self.tenant_id, "ModelInvocationInputTokens", "Count", input_tokens)
+                record_metric(self.tenant_id, "ModelInvocationOutputTokens", "Count", output_tokens)
+                record_metric(self.tenant_id, "ModelInvocationTotalTokens", "Count", total_tokens)
 
         except Exception as e:
-            yield f"We are unable to process your request at the moment. Error: {e}"
+            yield f"We are unable to process your request at the moment. Error: {e}"   

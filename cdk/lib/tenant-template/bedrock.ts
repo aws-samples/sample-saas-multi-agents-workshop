@@ -12,7 +12,7 @@ import {
   Effect,
   ArnPrincipal,
 } from "aws-cdk-lib/aws-iam";
-import { Function, Runtime } from "aws-cdk-lib/aws-lambda";
+import { Function, Runtime, Architecture } from "aws-cdk-lib/aws-lambda";
 import { LogGroup, RetentionDays } from "aws-cdk-lib/aws-logs";
 import { CustomResource } from "aws-cdk-lib";
 import { Construct } from "constructs";
@@ -101,6 +101,7 @@ export class BedrockCustom extends Construct {
       {
         entry: path.join(__dirname, "./bedrock-custom"),
         runtime: Runtime.PYTHON_3_12,
+        architecture: Architecture.ARM_64,
         index: "bedrock_logs.py",
         handler: "handler",
         timeout: Duration.seconds(60),

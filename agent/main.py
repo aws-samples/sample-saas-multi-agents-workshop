@@ -89,9 +89,12 @@ async def agent_invocation(payload, context):
     if not OpsContext.get_response_queue_ctx():
         OpsContext.set_response_queue_ctx(StreamingQueue())
 
+    # if not OpsContext.get_gateway_token_ctx():
+    #     OpsContext.set_gateway_token_ctx("Foobar")
+    #     # OpsContext.set_gateway_token_ctx(await get_token(access_token=""))
+
     if not OpsContext.get_gateway_token_ctx():
-        OpsContext.set_gateway_token_ctx("Foobar")
-        # OpsContext.set_gateway_token_ctx(await get_token(access_token=""))
+        OpsContext.set_gateway_token_ctx(auth_header)    
 
     if not OpsContext.get_authorization_header_ctx():
         print(
