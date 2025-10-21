@@ -80,9 +80,10 @@ class OrchestratorAgent:
             total_tokens = int(usage.get("totalTokens", input_tokens + output_tokens))
 
             # record metrics per your tenant
-            record_metric(self.tenant_id, "ModelInvocationInputTokens", "Count", input_tokens)
-            record_metric(self.tenant_id, "ModelInvocationOutputTokens", "Count", output_tokens)
-            record_metric(self.tenant_id, "ModelInvocationTotalTokens", "Count", total_tokens)
+            agent_name = self.agent.name
+            record_metric(self.tenant_id, "ModelInvocationInputTokens", "Count", input_tokens, agent_name)
+            record_metric(self.tenant_id, "ModelInvocationOutputTokens", "Count", output_tokens, agent_name)
+            record_metric(self.tenant_id, "ModelInvocationTotalTokens", "Count", total_tokens, agent_name)
 
             return str(result.message) if hasattr(result, "message") else str(result)
         except Exception as e:
@@ -107,9 +108,10 @@ class OrchestratorAgent:
                 output_tokens = int(usage.get("outputTokens", 0))
                 total_tokens = int(usage.get("totalTokens", input_tokens + output_tokens))
 
-                record_metric(self.tenant_id, "ModelInvocationInputTokens", "Count", input_tokens)
-                record_metric(self.tenant_id, "ModelInvocationOutputTokens", "Count", output_tokens)
-                record_metric(self.tenant_id, "ModelInvocationTotalTokens", "Count", total_tokens)
+                agent_name = self.agent.name
+                record_metric(self.tenant_id, "ModelInvocationInputTokens", "Count", input_tokens, agent_name)
+                record_metric(self.tenant_id, "ModelInvocationOutputTokens", "Count", output_tokens, agent_name)
+                record_metric(self.tenant_id, "ModelInvocationTotalTokens", "Count", total_tokens, agent_name)
 
         except Exception as e:
             yield f"We are unable to process your request at the moment. Error: {e}"   

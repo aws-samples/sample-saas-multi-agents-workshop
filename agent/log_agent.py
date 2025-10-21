@@ -8,6 +8,7 @@ import logging
 import ops_context
 import wrapped_tool
 import constants
+from metrics_manager import record_metric
 
 log = logging.Logger(__name__)
 log.level = logging.DEBUG
@@ -91,6 +92,17 @@ def log_agent_tool(query: str) -> str:
 
         try:
             agent_response = log_agent(f"Execute this log query: {query}")
+            
+            usage = agent_response.metrics.accumulated_usage or {}
+            input_tokens = int(usage.get("inputTokens", 0))
+            output_tokens = int(usage.get("outputTokens", 0))
+            total_tokens = int(usage.get("totalTokens", input_tokens + output_tokens))
+            
+            agent_name = log_agent.name
+            record_metric(tenant_id, "ModelInvocationInputTokens", "Count", input_tokens, agent_name)
+            record_metric(tenant_id, "ModelInvocationOutputTokens", "Count", output_tokens, agent_name)
+            record_metric(tenant_id, "ModelInvocationTotalTokens", "Count", total_tokens, agent_name)
+            
             text_response = str(agent_response)
 
             if len(text_response) > 0:

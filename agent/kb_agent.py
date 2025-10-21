@@ -10,8 +10,7 @@ from strands.models import BedrockModel
 import wrapped_tool
 import ops_context
 import constants
-
-import ops_context
+from metrics_manager import record_metric
 
 log = logging.Logger(__name__)
 log.level = logging.DEBUG
@@ -69,6 +68,17 @@ def kb_agent_tool(query: str, top_k: int = 5) -> str:
 
         try:
             agent_response = kb_agent(f"Search knowledge base with query: {query}. Specify the number of results to return in top {top_k} (optional).")
+            
+            usage = agent_response.metrics.accumulated_usage or {}
+            input_tokens = int(usage.get("inputTokens", 0))
+            output_tokens = int(usage.get("outputTokens", 0))
+            total_tokens = int(usage.get("totalTokens", input_tokens + output_tokens))
+            
+            agent_name = kb_agent.name
+            record_metric(tenant_id, "ModelInvocationInputTokens", "Count", input_tokens, agent_name)
+            record_metric(tenant_id, "ModelInvocationOutputTokens", "Count", output_tokens, agent_name)
+            record_metric(tenant_id, "ModelInvocationTotalTokens", "Count", total_tokens, agent_name)
+            
             text_response = str(agent_response)
 
             if len(text_response) > 0:
