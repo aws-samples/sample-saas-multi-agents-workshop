@@ -506,6 +506,17 @@ private createKbMcpHandlerLambda(kbId: string) {
                 `arn:aws:logs:${this.region}:${this.account}:log-group:/aws/bedrock-agentcore/runtimes/*`,
               ],
             }),
+            // SmartResolve Metrics Logs
+            new iam.PolicyStatement({
+              actions: [
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+              ],
+              resources: [
+                `arn:aws:logs:${this.region}:${this.account}:log-group:/smartresolve/log-group:*`,
+              ],
+            }),            
             new iam.PolicyStatement({
               actions: ["logs:DescribeLogGroups"],
               resources: [
