@@ -1,3 +1,6 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+
 from bedrock_agentcore.identity.auth import requires_access_token
 from ops_context import OpsContext
 import constants

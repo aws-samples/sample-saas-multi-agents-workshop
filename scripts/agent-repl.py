@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+
 
 import os
 import sys
@@ -220,7 +223,7 @@ def invoke_agent_with_streaming(
 
     # Use with context manager for the request
     with requests.post(
-        url, headers=headers, data=json.dumps({"prompt": prompt}), stream=True
+        url, headers=headers, data=json.dumps({"prompt": prompt}), stream=True, timeout=10
     ) as response:
 
         logger.debug(f"Response status: {response.status_code}")

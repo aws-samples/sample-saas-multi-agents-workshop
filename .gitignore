@@ -12,6 +12,9 @@ docs/
 # CDK asset staging directory
 .cdk.staging
 cdk.out
+cdk/cdk.out
+cdk/node_modules
+.ash
 
 .DS_Store
 

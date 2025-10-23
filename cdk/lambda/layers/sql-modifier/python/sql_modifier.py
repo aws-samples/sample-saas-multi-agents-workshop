@@ -1,3 +1,6 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+
 import re
 
 def append_tenant_filter(sql: str, tenant_id: str) -> str:

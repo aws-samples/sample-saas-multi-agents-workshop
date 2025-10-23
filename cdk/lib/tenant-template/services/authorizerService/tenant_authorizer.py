@@ -57,7 +57,7 @@ def lambda_handler(event, context):
     # get keys for tenant user pool to validate
     keys_url = 'https://cognito-idp.{}.amazonaws.com/{}/.well-known/jwks.json'.format(region, userpool_id)
     if is_safe_url(keys_url):
-        response = requests.get(keys_url).content
+        response = requests.get(keys_url, timeout=10).content
     else:
         logger.error(f"Unsafe URL scheme detected: {keys_url}")
         raise ValueError("URL scheme not allowed")
@@ -75,7 +75,7 @@ def lambda_handler(event, context):
         tenant_id = response["custom:tenantId"]
         response_url = control_plane_gw_url + f'tenant-config?tenantId={tenant_id}'
         if is_safe_url(response_url):
-            response_data = requests.get(response_url).content
+            response_data = requests.get(response_url, timeout=10).content
         else:
             logger.error(f"Unsafe URL scheme detected: {response_url}")
             raise ValueError("URL scheme not allowed")
