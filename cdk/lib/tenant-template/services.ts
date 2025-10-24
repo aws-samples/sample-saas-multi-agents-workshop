@@ -45,7 +45,6 @@ export interface ServicesProps {
 }
 
 export class Services extends Construct {
-  public readonly agentCoreService: Function;
   public readonly s3UploaderService: Function;
   public readonly s3LogsUploaderService: Function; // Added for logs upload
   public readonly triggerDataIngestionService: Function;
@@ -58,7 +57,6 @@ export class Services extends Construct {
     const region = Stack.of(this).region;
     const accountId = Stack.of(this).account;
 
-    const agentResolution = props.restApi.root.addResource("agent-resolution");
     const resolution = props.restApi.root.addResource("resolution");
     const s3Upload = props.restApi.root.addResource("upload");
     const s3LogsUpload = props.restApi.root.addResource("upload-logs");
@@ -267,38 +265,7 @@ export class Services extends Construct {
         ),
       ],
     });
-
-    const agentCoreService = new python.PythonFunction(this, "AgentCoreService", {
-      functionName: "agentCoreService",
-      entry: path.join(__dirname, "services/agentCoreService/"),
-      runtime: Runtime.PYTHON_3_12,
-      architecture: Architecture.ARM_64,
-      index: "agentcore_service.py",
-      handler: "lambda_handler",
-      timeout: Duration.seconds(60),
-      memorySize: 256,
-      role: agentCoreLambdaExecRole,
-      layers: [props.lambdaPowerToolsLayer, props.utilsLayer],
-      bundling: {
-        platform: "linux/arm64",
-      },
-      environment: {
-        POWERTOOLS_SERVICE_NAME: "AgentCoreService",
-        POWERTOOLS_METRICS_NAMESPACE: "SaaSAgentCoreGenAI",
-      },
-    });
-
-    this.agentCoreService = agentCoreService;
-    agentResolution.addMethod(
-      "POST",
-      new LambdaIntegration(this.agentCoreService, { proxy: true }),
-      {
-        authorizer: authorizer,
-        authorizationType: apigw.AuthorizationType.CUSTOM,
-        apiKeyRequired: true,
-      }
-    );
-    
+   
     // RAG Resolution lambda
     const ragResolutionLambdaExecRole = new Role(this, "RagResolutionLambdaExecRole", {
       assumedBy: new ServicePrincipal("lambda.amazonaws.com"),

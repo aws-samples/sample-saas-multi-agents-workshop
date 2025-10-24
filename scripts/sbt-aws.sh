@@ -26,7 +26,6 @@ help() {
   echo "  get-all-users <limit> <next_token>"
   echo "  update-user <user_id> <user_role> <user_email>"
   echo "  delete-user <user_id>"
-  echo "  agent-resolution <user> <password> <query>"
   echo "  direct-resolution <user> <password> <query>"
   echo "  ingest-data <user> <password> <file_location>"
   echo "  ingest-logs <user> <password> <file_location>"
@@ -463,47 +462,6 @@ delete_user() {
   fi
 }
 
-agent_resolution() {
-  USER="$1"
-  PASSWORD="$2"
-  QUERY="$3"
-
-  if $DEBUG; then
-    echo "Calling agent-resolution with query: $QUERY"
-  fi
-
-  STACK_NAME="saas-genai-workshop-common-resources"
-  APP_CLIENT_ID_OUTPUT_PARAM_NAME="UserPoolClientId"
-  API_GATEWAY_URL_OUTPUT_PARAM_NAME="ApiGatewayUrl"
-  
-  export SAAS_APP_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='$APP_CLIENT_ID_OUTPUT_PARAM_NAME'].OutputValue" --output text)
-  export API_GATEWAY_URL=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='$API_GATEWAY_URL_OUTPUT_PARAM_NAME'].OutputValue" --output text)
-
-  AUTHENTICATION_RESULT=$(aws cognito-idp initiate-auth \
-    --auth-flow USER_PASSWORD_AUTH \
-    --client-id "${SAAS_APP_CLIENT_ID}" \
-    --auth-parameters "USERNAME='${USER}',PASSWORD='${PASSWORD}'" \
-    --query 'AuthenticationResult')
-
-  ACCESS_TOKEN=$(echo "$AUTHENTICATION_RESULT" | jq -r '.AccessToken')
-  ID_TOKEN=$(echo "$AUTHENTICATION_RESULT" | jq -r '.IdToken')
-
-  if $DEBUG; then
-    echo "API GATEWAY URL: $API_GATEWAY_URL"
-  fi
-
-  echo "Sending request and waiting for response..."
-
-  RESPONSE=$(curl --request POST \
-    --url "${API_GATEWAY_URL}agent-resolution" \
-    --header "Authorization: Bearer ${ID_TOKEN}" \
-    --header 'content-type: application/json' \
-    --data "$QUERY" \
-    --silent)
-
-  echo -e "$RESPONSE" | tr '\n' '\n'
-}
-
 direct_resolution() {
   USER="$1"
   PASSWORD="$2"
@@ -761,14 +719,6 @@ case "$1" in
     exit 1
   fi
   delete_user "$2"
-  ;;
-
-"agent-resolution")
-  if [ $# -ne 4 ]; then
-    echo "Error: agent-resolution requires user, password, and query"
-    exit 1
-  fi
-  agent_resolution "$2" "$3" "$4"
   ;;
 
 "direct-resolution")
