@@ -1,6 +1,6 @@
 # SaaS Multi-Agents Workshop
 
-This workshop demonstrates how to build a multi-tenant, multi-agent architecture for a SaaS platform called "SmartResolve" - a GenAI-powered intelligent resolution engine for technical support.
+This workshop demonstrates how to build a multi-tenant, multi-agent architecture for a SaaS platform called "SmartResolve" - a generative AI-powered intelligent resolution engine for technical support.
 
 ## Architecture Overview
 
@@ -19,7 +19,7 @@ The solution supports multiple tenants, with the following example tenants:
 
 ### Data Structure
 
-Each tenant has the following data structure in S3:
+Each tenant has the following data structure in Amazon Simple Storage Service (Amazon S3):
 
 ```
 tenant-id/
@@ -57,17 +57,17 @@ The solution uses a multi-agent architecture with the following components:
 
 Tenant isolation is implemented through the following mechanisms:
 
-1. **S3 Object Metadata**: Each object in S3 has a `tenant_id` metadata field
+1. **Amazon S3 Object Metadata**: Each object in Amazon S3 has a `tenant_id` metadata field
 2. **Session Attributes**: The tenant ID is passed as a session attribute to agents
-3. **DynamoDB Partitioning**: Data in DynamoDB is partitioned by tenant ID
-4. **IAM Policies**: IAM policies restrict access to tenant-specific resources
+3. **Amazon DynamoDB Partitioning**: Data in Amazon DynamoDB is partitioned by tenant ID
+4. **AWS Identity and Access Management (IAM) Policies**: IAM policies restrict access to tenant-specific resources
 
 ## Knowledge Base
 
 The knowledge base contains the following types of documents:
 
 1. **Error Codes**: Documentation of error codes and their resolutions
-2. **SOPs**: Standard Operating Procedures for common tasks
+2. **SOPs**: Standard Operating Procedures for routine operational activities such as incident response, system maintenance, and data backup procedures
 3. **Resolution Documents**: Documentation of past issue resolutions
 4. **Knowledge Base Documents**: General knowledge base articles
 
@@ -89,7 +89,7 @@ The solution includes mock data for the following tenants:
 
 To deploy the solution:
 
-1. Run the CDK deployment script
+1. Run the AWS Cloud Development Kit (AWS CDK) deployment script
 2. Provision tenants using the tenant provisioning script
 3. Generate mock data for each tenant
 
@@ -103,12 +103,12 @@ The workshop consists of the following labs:
 
 2. **Lab 2**: Multi-tenant multi-agents architecture
    - Introduction to multi-agent systems
-   - Orchestrating multiple agents for complex tasks
+   - Orchestrating multiple agents for multi-step troubleshooting scenarios, such as analyzing logs, querying knowledge bases, and generating resolution recommendations
 
 3. **Lab 3**: Tenant isolation
    - Implementing tenant isolation through metadata filtering
-   - Securing tenant data with IAM policies
+   - Implementing tenant data protection with enhanced security features through IAM policies
 
 4. **Lab 4**: Cost per tenant
    - Tracking and analyzing costs per tenant
-   - Implementing cost optimization strategies
+   - Implementing cost optimization strategies including resource right-sizing, usage monitoring, and automated scaling policies
