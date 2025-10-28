@@ -1,0 +1,22 @@
+*.js
+!jest.config.js
+*.d.ts
+node_modules
+agents/
+assets/
+zip_assets.sh
+README-resolution-endpoints.md
+tmp_local_cfn_deploy.sh
+docs/
+
+# CDK asset staging directory
+.cdk.staging
+cdk.out
+cdk/cdk.out
+cdk/node_modules
+.ash
+
+.DS_Store
+
+agent/.bedrock_agentcore.yaml
+agent/constants.py
