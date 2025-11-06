@@ -30,10 +30,18 @@ export class AgentCoreStack extends cdk.NestedStack {
     super(scope, id, props);
 
     // Import existing S3 bucket
-    const logsBucket = s3.Bucket.fromBucketName(this, "LogsBucket", props.s3BucketName);
+    const logsBucket = s3.Bucket.fromBucketName(
+      this,
+      "LogsBucket",
+      props.s3BucketName
+    );
 
     // Import existing Athena results bucket
-    const athenaResultsBucket = s3.Bucket.fromBucketName(this, "AthenaResultsBucket", props.athenaResultsBucketName);
+    const athenaResultsBucket = s3.Bucket.fromBucketName(
+      this,
+      "AthenaResultsBucket",
+      props.athenaResultsBucketName
+    );
 
     // Use the existing user pool from props
     const userPool = props.userPool;
@@ -54,8 +62,21 @@ export class AgentCoreStack extends cdk.NestedStack {
 
     // ========== TODO LAB 2: TO ENABLE ABAC ==========
     // COMMENT OUT:
-    const logMcpHandlerRole = this.createLogMcpHandlerRole(s3BucketName, props.athenaResultsBucketName, props.athenaDatabase, props.athenaTable, props.athenaWorkgroup);
-    const logMcpLambda = this.createLogMcpHandlerLambda(s3BucketName, props.athenaResultsBucketName, props.athenaDatabase, props.athenaTable, props.athenaWorkgroup, logMcpHandlerRole);
+    const logMcpHandlerRole = this.createLogMcpHandlerRole(
+      s3BucketName,
+      props.athenaResultsBucketName,
+      props.athenaDatabase,
+      props.athenaTable,
+      props.athenaWorkgroup
+    );
+    const logMcpLambda = this.createLogMcpHandlerLambda(
+      s3BucketName,
+      props.athenaResultsBucketName,
+      props.athenaDatabase,
+      props.athenaTable,
+      props.athenaWorkgroup,
+      logMcpHandlerRole
+    );
     // UNCOMMENT:
     // const basicRole = this.createLogMcpHandlerBasicRole();
     // const abacRole = this.createAbacRole(basicRole, s3BucketName, props.athenaResultsBucketName, props.athenaDatabase, props.athenaTable, props.athenaWorkgroup);
@@ -128,263 +149,301 @@ export class AgentCoreStack extends cdk.NestedStack {
     new cdk.CfnOutput(this, "AthenaResultsBucketName", {
       value: athenaResultsBucket.bucketName,
       description: "The name of the Athena results bucket",
-    });    
+    });
   }
 
-// TODO: LAB 2: Uncomment both methods below when enabling ABAC
-/*
-private createLogMcpHandlerBasicRole(): iam.Role {
-  return new iam.Role(this, "LogMcpHandlerBasicRole", {
-    assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
-    managedPolicies: [
-      iam.ManagedPolicy.fromAwsManagedPolicyName("service-role/AWSLambdaBasicExecutionRole")
-    ],
-    inlinePolicies: {
-      AssumeAbacRole: new iam.PolicyDocument({
-        statements: [
-          new iam.PolicyStatement({
-            actions: ["sts:AssumeRole", "sts:TagSession"],
-            resources: [`arn:aws:iam::${this.account}:role/*LogMcpHandlerAbacRole*`]
-          })
-        ]
-      })
-    }
-  });
-}
+  private createLogMcpHandlerBasicRole(): iam.Role {
+    return new iam.Role(this, "LogMcpHandlerBasicRole", {
+      assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName(
+          "service-role/AWSLambdaBasicExecutionRole"
+        ),
+      ],
+      inlinePolicies: {
+        AssumeAbacRole: new iam.PolicyDocument({
+          statements: [
+            new iam.PolicyStatement({
+              actions: ["sts:AssumeRole", "sts:TagSession"],
+              resources: [
+                `arn:aws:iam::${this.account}:role/*LogMcpHandlerAbacRole*`,
+              ],
+            }),
+          ],
+        }),
+      },
+    });
+  }
 
-private createAbacRole(basicRole: iam.Role, s3BucketName: string, athenaResultsBucketName: string, athenaDatabase: string, athenaTable: string, athenaWorkgroup: string): iam.Role {
-  const role = new iam.Role(this, "LogMcpHandlerAbacRole", {
-    assumedBy: new iam.ArnPrincipal(basicRole.roleArn),
-    inlinePolicies: {
-      TenantSpecificAccess: new iam.PolicyDocument({
-        statements: [
-          new iam.PolicyStatement({
-            actions: [
-              "kms:Decrypt",
-              "kms:DescribeKey",
-              "kms:GenerateDataKey*",
-              "kms:Encrypt",
-              "kms:ReEncrypt*"
-            ],
-            resources: ["*"]
-          }),
-          new iam.PolicyStatement({
-            actions: [
-              "athena:StartQueryExecution",
-              "athena:GetQueryExecution",
-              "athena:GetQueryResults",
-              "athena:StopQueryExecution",
-              "athena:GetWorkGroup"
-            ],
-            resources: [`arn:aws:athena:${this.region}:${this.account}:workgroup/${athenaWorkgroup}`]
-          }),
-          new iam.PolicyStatement({
-            actions: [
-              "glue:GetDatabase",
-              "glue:GetDatabases",
-              "glue:GetTable",
-              "glue:GetTables",
-              "glue:GetPartition",
-              "glue:GetPartitions",
-              "glue:BatchGetPartition"
-            ],
-            resources: [
-              `arn:aws:glue:${this.region}:${this.account}:catalog`,
-              `arn:aws:glue:${this.region}:${this.account}:database/${athenaDatabase}`,
-              `arn:aws:glue:${this.region}:${this.account}:table/${athenaDatabase}/${athenaTable}`
-            ]
-          }),
-          new iam.PolicyStatement({
-            actions: [
-              "s3:GetBucketLocation",
-              "s3:ListBucket"
-            ],
-            resources: [
-              `arn:aws:s3:::${athenaResultsBucketName}`,
-              `arn:aws:s3:::${s3BucketName}`
-            ]
-          }),
-          new iam.PolicyStatement({
-            actions: [
-              "s3:PutObject",
-              "s3:GetObject",
-              "s3:AbortMultipartUpload",
-              "s3:ListMultipartUploadParts"
-            ],
-            resources: [
-              `arn:aws:s3:::${athenaResultsBucketName}/*`,
-              `arn:aws:s3:::${s3BucketName}/\${aws:PrincipalTag/tenant_id}/*`
-            ]
-          })
-        ]
-      })
-    }
-  });
-  
-  const cfnRole = role.node.defaultChild as iam.CfnRole;
-  cfnRole.assumeRolePolicyDocument = {
-    Version: "2012-10-17",
-    Statement: [
-      {
-        Effect: "Allow",
-        Principal: { AWS: basicRole.roleArn },
-        Action: ["sts:AssumeRole", "sts:TagSession"]
-      }
-    ]
-  };
-  
-  return role;
-}
-*/
-  
-private createLogMcpHandlerRole(s3BucketName: string, athenaResultsBucketName: string, athenaDatabase: string, athenaTable: string, athenaWorkgroup: string): iam.Role {
-  return new iam.Role(this, "LogMcpHandlerRole", {
-    assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
-    managedPolicies: [
-      iam.ManagedPolicy.fromAwsManagedPolicyName("service-role/AWSLambdaBasicExecutionRole")
-    ],
-    inlinePolicies: {
-      AthenaQueryAccess: new iam.PolicyDocument({
-        statements: [
-          new iam.PolicyStatement({
-            actions: [
-              "kms:Decrypt",
-              "kms:DescribeKey",
-              "kms:GenerateDataKey*",
-              "kms:Encrypt",
-              "kms:ReEncrypt*"
-            ],
-            resources: ["*"]
-          }),
-          new iam.PolicyStatement({
-            actions: [
-              "athena:StartQueryExecution",
-              "athena:GetQueryExecution",
-              "athena:GetQueryResults",
-              "athena:StopQueryExecution",
-              "athena:GetWorkGroup"
-            ],
-            resources: [`arn:aws:athena:${this.region}:${this.account}:workgroup/${athenaWorkgroup}`]
-          }),
-          new iam.PolicyStatement({
-            actions: [
-              "glue:GetDatabase",
-              "glue:GetDatabases",
-              "glue:GetTable",
-              "glue:GetTables",
-              "glue:GetPartition",
-              "glue:GetPartitions",
-              "glue:BatchGetPartition"
-            ],
-            resources: [
-              `arn:aws:glue:${this.region}:${this.account}:catalog`,
-              `arn:aws:glue:${this.region}:${this.account}:database/${athenaDatabase}`,
-              `arn:aws:glue:${this.region}:${this.account}:table/${athenaDatabase}/${athenaTable}`
-            ]
-          }),
-          new iam.PolicyStatement({
-            actions: [
-              "s3:GetBucketLocation",
-              "s3:ListBucket"
-            ],
-            resources: [
-              `arn:aws:s3:::${athenaResultsBucketName}`,
-              `arn:aws:s3:::${s3BucketName}`
-            ]
-          }),
-          new iam.PolicyStatement({
-            actions: [
-              "s3:PutObject",
-              "s3:GetObject",
-              "s3:AbortMultipartUpload",
-              "s3:ListMultipartUploadParts"
-            ],
-            resources: [
-              `arn:aws:s3:::${athenaResultsBucketName}/*`,
-              `arn:aws:s3:::${s3BucketName}/*`
-            ]
-          })
-        ]
-      })
-    }
-  });
-}
+  private createAbacRole(
+    basicRole: iam.Role,
+    s3BucketName: string,
+    athenaResultsBucketName: string,
+    athenaDatabase: string,
+    athenaTable: string,
+    athenaWorkgroup: string
+  ): iam.Role {
+    const role = new iam.Role(this, "LogMcpHandlerAbacRole", {
+      assumedBy: new iam.ArnPrincipal(basicRole.roleArn),
+      inlinePolicies: {
+        TenantSpecificAccess: new iam.PolicyDocument({
+          statements: [
+            new iam.PolicyStatement({
+              actions: [
+                "kms:Decrypt",
+                "kms:DescribeKey",
+                "kms:GenerateDataKey*",
+                "kms:Encrypt",
+                "kms:ReEncrypt*",
+              ],
+              resources: ["*"],
+            }),
+            new iam.PolicyStatement({
+              actions: [
+                "athena:StartQueryExecution",
+                "athena:GetQueryExecution",
+                "athena:GetQueryResults",
+                "athena:StopQueryExecution",
+                "athena:GetWorkGroup",
+              ],
+              resources: [
+                `arn:aws:athena:${this.region}:${this.account}:workgroup/${athenaWorkgroup}`,
+              ],
+            }),
+            new iam.PolicyStatement({
+              actions: [
+                "glue:GetDatabase",
+                "glue:GetDatabases",
+                "glue:GetTable",
+                "glue:GetTables",
+                "glue:GetPartition",
+                "glue:GetPartitions",
+                "glue:BatchGetPartition",
+              ],
+              resources: [
+                `arn:aws:glue:${this.region}:${this.account}:catalog`,
+                `arn:aws:glue:${this.region}:${this.account}:database/${athenaDatabase}`,
+                `arn:aws:glue:${this.region}:${this.account}:table/${athenaDatabase}/${athenaTable}`,
+              ],
+            }),
+            new iam.PolicyStatement({
+              actions: ["s3:GetBucketLocation", "s3:ListBucket"],
+              resources: [
+                `arn:aws:s3:::${athenaResultsBucketName}`,
+                `arn:aws:s3:::${s3BucketName}`,
+              ],
+            }),
+            new iam.PolicyStatement({
+              actions: [
+                "s3:PutObject",
+                "s3:GetObject",
+                "s3:AbortMultipartUpload",
+                "s3:ListMultipartUploadParts",
+              ],
+              resources: [
+                `arn:aws:s3:::${athenaResultsBucketName}/*`,
+                `arn:aws:s3:::${s3BucketName}/\${aws:PrincipalTag/tenant_id}/*`,
+              ],
+            }),
+          ],
+        }),
+      },
+    });
 
-private createSqlModifierLayer(): lambda.LayerVersion {
-  return new lambda.LayerVersion(this, "SqlModifierLayer", {
-    layerVersionName: "sql-modifier-layer",
-    code: lambda.Code.fromAsset(path.join(__dirname, "../lambda/layers/sql-modifier")),
-    compatibleRuntimes: [lambda.Runtime.PYTHON_3_12],
-    description: "Layer containing SQL modifier utilities for tenant filtering"
-  });
-}
+    const cfnRole = role.node.defaultChild as iam.CfnRole;
+    cfnRole.assumeRolePolicyDocument = {
+      Version: "2012-10-17",
+      Statement: [
+        {
+          Effect: "Allow",
+          Principal: { AWS: basicRole.roleArn },
+          Action: ["sts:AssumeRole", "sts:TagSession"],
+          Condition: {
+            StringLike: {
+              "aws:RequestTag/tenant_id": "*",
+            },
+          },
+        },
+      ],
+    };
 
+    return role;
+  }
 
-private createLogMcpHandlerLambda(s3BucketName: string, athenaResultsBucketName: string, athenaDatabase: string, athenaTable: string, athenaWorkgroup: string, role: iam.Role, abacRole?: iam.Role) {
-  const sqlModifierLayer = this.createSqlModifierLayer();
-  const env: Record<string, string> = {
-    ATHENA_DATABASE: athenaDatabase,
-    ATHENA_TABLE: athenaTable,
-    ATHENA_WORKGROUP: athenaWorkgroup,
-    ATHENA_OUTPUT: `s3://${athenaResultsBucketName}/athena-output/`
-  };
-  if (abacRole) env.ABAC_ROLE_ARN = abacRole.roleArn;
+  private createLogMcpHandlerRole(
+    s3BucketName: string,
+    athenaResultsBucketName: string,
+    athenaDatabase: string,
+    athenaTable: string,
+    athenaWorkgroup: string
+  ): iam.Role {
+    return new iam.Role(this, "LogMcpHandlerRole", {
+      assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName(
+          "service-role/AWSLambdaBasicExecutionRole"
+        ),
+      ],
+      inlinePolicies: {
+        AthenaQueryAccess: new iam.PolicyDocument({
+          statements: [
+            new iam.PolicyStatement({
+              actions: [
+                "kms:Decrypt",
+                "kms:DescribeKey",
+                "kms:GenerateDataKey*",
+                "kms:Encrypt",
+                "kms:ReEncrypt*",
+              ],
+              resources: ["*"],
+            }),
+            new iam.PolicyStatement({
+              actions: [
+                "athena:StartQueryExecution",
+                "athena:GetQueryExecution",
+                "athena:GetQueryResults",
+                "athena:StopQueryExecution",
+                "athena:GetWorkGroup",
+              ],
+              resources: [
+                `arn:aws:athena:${this.region}:${this.account}:workgroup/${athenaWorkgroup}`,
+              ],
+            }),
+            new iam.PolicyStatement({
+              actions: [
+                "glue:GetDatabase",
+                "glue:GetDatabases",
+                "glue:GetTable",
+                "glue:GetTables",
+                "glue:GetPartition",
+                "glue:GetPartitions",
+                "glue:BatchGetPartition",
+              ],
+              resources: [
+                `arn:aws:glue:${this.region}:${this.account}:catalog`,
+                `arn:aws:glue:${this.region}:${this.account}:database/${athenaDatabase}`,
+                `arn:aws:glue:${this.region}:${this.account}:table/${athenaDatabase}/${athenaTable}`,
+              ],
+            }),
+            new iam.PolicyStatement({
+              actions: ["s3:GetBucketLocation", "s3:ListBucket"],
+              resources: [
+                `arn:aws:s3:::${athenaResultsBucketName}`,
+                `arn:aws:s3:::${s3BucketName}`,
+              ],
+            }),
+            new iam.PolicyStatement({
+              actions: [
+                "s3:PutObject",
+                "s3:GetObject",
+                "s3:AbortMultipartUpload",
+                "s3:ListMultipartUploadParts",
+              ],
+              resources: [
+                `arn:aws:s3:::${athenaResultsBucketName}/*`,
+                `arn:aws:s3:::${s3BucketName}/*`,
+              ],
+            }),
+          ],
+        }),
+      },
+    });
+  }
 
-  return new lambda.Function(this, "LogMcpHandler", {
-    functionName: "AgentCore-LogMcpHandler",
-    description: "Lambda function handler for the log MCP server with Athena query capabilities",
-    runtime: lambda.Runtime.PYTHON_3_12,
-    handler: "handler.handler",
-    code: lambda.Code.fromAsset(path.join(__dirname, "../lambda/log-mcp-handler")),
-    role: role,
-    timeout: cdk.Duration.seconds(60),
-    memorySize: 512,
-    layers: [sqlModifierLayer],
-    environment: env
-  });
-}
+  private createSqlModifierLayer(): lambda.LayerVersion {
+    return new lambda.LayerVersion(this, "SqlModifierLayer", {
+      layerVersionName: "sql-modifier-layer",
+      code: lambda.Code.fromAsset(
+        path.join(__dirname, "../lambda/layers/sql-modifier")
+      ),
+      compatibleRuntimes: [lambda.Runtime.PYTHON_3_12],
+      description:
+        "Layer containing SQL modifier utilities for tenant filtering",
+    });
+  }
 
-private createKbMcpHandlerLambda(kbId: string) {
-  const kbRole = new iam.Role(this, "KbMcpHandlerRole", {
-    assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
-    managedPolicies: [
-      iam.ManagedPolicy.fromAwsManagedPolicyName("service-role/AWSLambdaBasicExecutionRole")
-    ],
-    inlinePolicies: {
-      BedrockKnowledgeBasePolicy: new iam.PolicyDocument({
-        statements: [
-          new iam.PolicyStatement({
-            actions: ["bedrock:Retrieve"],
-            resources: [`arn:aws:bedrock:${this.region}:${this.account}:knowledge-base/${kbId}`]
-          }),
-          new iam.PolicyStatement({
-            actions: [
-              "kms:Decrypt",
-              "kms:DescribeKey", 
-              "kms:GenerateDataKey*",
-              "kms:Encrypt",
-              "kms:ReEncrypt*"
-            ],
-            resources: ["*"]
-          })
-        ]
-      })
-    }
-  });
+  private createLogMcpHandlerLambda(
+    s3BucketName: string,
+    athenaResultsBucketName: string,
+    athenaDatabase: string,
+    athenaTable: string,
+    athenaWorkgroup: string,
+    role: iam.Role,
+    abacRole?: iam.Role
+  ) {
+    const sqlModifierLayer = this.createSqlModifierLayer();
+    const env: Record<string, string> = {
+      ATHENA_DATABASE: athenaDatabase,
+      ATHENA_TABLE: athenaTable,
+      ATHENA_WORKGROUP: athenaWorkgroup,
+      ATHENA_OUTPUT: `s3://${athenaResultsBucketName}/athena-output/`,
+    };
+    if (abacRole) env.ABAC_ROLE_ARN = abacRole.roleArn;
 
-  return new lambda.Function(this, "KbMcpHandler", {
-    functionName: "AgentCore-KbMcpHandler",
-    description: "Lambda function handler for the KB MCP server",
-    runtime: lambda.Runtime.PYTHON_3_12,
-    handler: "handler.handler",
-    code: lambda.Code.fromAsset(path.join(__dirname, "../lambda/kb-mcp-handler")),
-    role: kbRole,
-    environment: {
-      BEDROCK_KB_ID: kbId,
-      KB_TOP_K: "8"
-    }
-  });
-}
+    return new lambda.Function(this, "LogMcpHandler", {
+      functionName: "AgentCore-LogMcpHandler",
+      description:
+        "Lambda function handler for the log MCP server with Athena query capabilities",
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: "handler.handler",
+      code: lambda.Code.fromAsset(
+        path.join(__dirname, "../lambda/log-mcp-handler")
+      ),
+      role: role,
+      timeout: cdk.Duration.seconds(60),
+      memorySize: 512,
+      layers: [sqlModifierLayer],
+      environment: env,
+    });
+  }
+
+  private createKbMcpHandlerLambda(kbId: string) {
+    const kbRole = new iam.Role(this, "KbMcpHandlerRole", {
+      assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName(
+          "service-role/AWSLambdaBasicExecutionRole"
+        ),
+      ],
+      inlinePolicies: {
+        BedrockKnowledgeBasePolicy: new iam.PolicyDocument({
+          statements: [
+            new iam.PolicyStatement({
+              actions: ["bedrock:Retrieve"],
+              resources: [
+                `arn:aws:bedrock:${this.region}:${this.account}:knowledge-base/${kbId}`,
+              ],
+            }),
+            new iam.PolicyStatement({
+              actions: [
+                "kms:Decrypt",
+                "kms:DescribeKey",
+                "kms:GenerateDataKey*",
+                "kms:Encrypt",
+                "kms:ReEncrypt*",
+              ],
+              resources: ["*"],
+            }),
+          ],
+        }),
+      },
+    });
+
+    return new lambda.Function(this, "KbMcpHandler", {
+      functionName: "AgentCore-KbMcpHandler",
+      description: "Lambda function handler for the KB MCP server",
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: "handler.handler",
+      code: lambda.Code.fromAsset(
+        path.join(__dirname, "../lambda/kb-mcp-handler")
+      ),
+      role: kbRole,
+      environment: {
+        BEDROCK_KB_ID: kbId,
+        KB_TOP_K: "8",
+      },
+    });
+  }
 
   private createResourceServer(
     userPool: cdk.aws_cognito.UserPool,
@@ -405,7 +464,6 @@ private createKbMcpHandlerLambda(kbId: string) {
 
     return { server, scope };
   }
-
 
   private createUserClient(userPool: cognito.UserPool): cognito.UserPoolClient {
     return userPool.addClient("user-client", {
@@ -469,11 +527,10 @@ private createKbMcpHandlerLambda(kbId: string) {
             // ECR Image Access
             new iam.PolicyStatement({
               sid: "ECRImageAccess",
-              actions: [
-                "ecr:BatchGetImage",
-                "ecr:GetDownloadUrlForLayer",
+              actions: ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"],
+              resources: [
+                `arn:aws:ecr:${this.region}:${this.account}:repository/*`,
               ],
-              resources: [`arn:aws:ecr:${this.region}:${this.account}:repository/*`],
             }),
             // ECR Token Access
             new iam.PolicyStatement({
@@ -487,21 +544,18 @@ private createKbMcpHandlerLambda(kbId: string) {
               actions: [
                 "aws-marketplace:Subscribe",
                 "aws-marketplace:ViewSubscriptions",
-                "aws-marketplace:Unsubscribe"
+                "aws-marketplace:Unsubscribe",
               ],
-              resources: ["*"],      
-              conditions : {
-                StringEquals : {
-                  "aws:CalledViaLast" : "bedrock.amazonaws.com"
+              resources: ["*"],
+              conditions: {
+                StringEquals: {
+                  "aws:CalledViaLast": "bedrock.amazonaws.com",
                 },
               },
             }),
             // CloudWatch Logs
             new iam.PolicyStatement({
-              actions: [
-                "logs:DescribeLogStreams",
-                "logs:CreateLogGroup",
-              ],
+              actions: ["logs:DescribeLogStreams", "logs:CreateLogGroup"],
               resources: [
                 `arn:aws:logs:${this.region}:${this.account}:log-group:/aws/bedrock-agentcore/runtimes/*`,
               ],
@@ -516,7 +570,7 @@ private createKbMcpHandlerLambda(kbId: string) {
               resources: [
                 `arn:aws:logs:${this.region}:${this.account}:log-group:/smartresolve/log-group:*`,
               ],
-            }),            
+            }),
             new iam.PolicyStatement({
               actions: ["logs:DescribeLogGroups"],
               resources: [
@@ -524,10 +578,7 @@ private createKbMcpHandlerLambda(kbId: string) {
               ],
             }),
             new iam.PolicyStatement({
-              actions: [
-                "logs:CreateLogStream",
-                "logs:PutLogEvents",
-              ],
+              actions: ["logs:CreateLogStream", "logs:PutLogEvents"],
               resources: [
                 `arn:aws:logs:${this.region}:${this.account}:log-group:/aws/bedrock-agentcore/runtimes/*:log-stream:*`,
               ],
@@ -600,14 +651,15 @@ private createKbMcpHandlerLambda(kbId: string) {
             // Bedrock AgentCore Code Execution Permission
             new iam.PolicyStatement({
               sid: "BedrockAgentCoreCodeExecutionPolicy",
-              actions: ["bedrock-agentcore:StartCodeInterpreterSession",
+              actions: [
+                "bedrock-agentcore:StartCodeInterpreterSession",
                 "bedrock-agentcore:StopCodeInterpreterSession",
-                "bedrock-agentcore:InvokeCodeInterpreter"
+                "bedrock-agentcore:InvokeCodeInterpreter",
               ],
               resources: [
                 `arn:aws:bedrock-agentcore:${this.region}:aws:code-interpreter/aws.codeinterpreter.v1`,
               ],
-            }),              
+            }),
             // Bedrock AgentCore Identity OAuth2
             new iam.PolicyStatement({
               sid: "BedrockAgentCoreIdentityGetResourceOauth2Token",

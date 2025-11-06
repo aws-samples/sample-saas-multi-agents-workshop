@@ -91,7 +91,6 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
       {"tenant_id":"TENANT123","sql":"SELECT ..."}
     """
     try:
-        # TODO: LAB 2 Comment out to introduce a bug
         tenant_id = event.get("tenant_id")
 
         # TODO: LAB 2 Uncomment to introduce a bug

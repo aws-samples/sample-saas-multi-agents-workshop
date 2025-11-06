@@ -223,7 +223,7 @@ def invoke_agent_with_streaming(
 
     # Use with context manager for the request
     with requests.post(
-        url, headers=headers, data=json.dumps({"prompt": prompt}), stream=True, timeout=10
+        url, headers=headers, data=json.dumps({"prompt": prompt}), stream=True, timeout=30
     ) as response:
 
         logger.debug(f"Response status: {response.status_code}")
