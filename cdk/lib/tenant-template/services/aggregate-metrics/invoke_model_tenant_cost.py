@@ -107,13 +107,15 @@ class InvokeModelTenantCost():
             logger.info(f"Calculating cost for tenant: {tenant_id}")
             tenant_attribution_percentage_json = json.loads(tenant_attribution_percentage)
             logger.info(f"Attribution percentages: {tenant_attribution_percentage_json}")
+
+            tenant_input_tokens_cost = 0
+            tenant_output_tokens_cost = 0
             
             # TODO: Lab3 - Calculate tenant cost for generating final tenant specific response
             # tenant_input_tokens_cost = self.__get_tenant_cost(CLAUDE_SONNET_INPUT_TOKENS_LABEL, total_service_cost_dict, tenant_attribution_percentage_json)
             # tenant_output_tokens_cost = self.__get_tenant_cost(CLAUDE_SONNET_OUTPUT_TOKENS_LABEL, total_service_cost_dict, tenant_attribution_percentage_json)
             # logger.info(f"Tenant {tenant_id} costs - Input: {tenant_input_tokens_cost}, Output: {tenant_output_tokens_cost}")
-            tenant_input_tokens_cost = 0
-            tenant_output_tokens_cost = 0
+            
 
             tenant_service_cost = tenant_input_tokens_cost + tenant_output_tokens_cost
             tenant_attribution_percentage_value = tenant_service_cost / total_service_cost if total_service_cost > 0 else Decimal('0')
@@ -162,12 +164,14 @@ class InvokeModelTenantCost():
             # tenant_input_tokens, tenant_output_tokens = self.__query_cloudwatch_logs(query, Decimal('0'))
             # logger.info(f"Tenant {tenant_id} tokens - Input: {tenant_input_tokens}, Output: {tenant_output_tokens}")
 
+            tenant_attribution_input_tokens_percentage = 0
+            tenant_attribution_output_tokens_percentage = 0
+
             # TODO: Lab3 - Calculate the percentage of tenant attribution for input and output tokens
             # tenant_attribution_input_tokens_percentage = tenant_input_tokens / total_input_tokens if total_input_tokens > 0 else 0
             # tenant_attribution_output_tokens_percentage = tenant_output_tokens / total_output_tokens if total_output_tokens > 0 else 0
             # logger.info(f"Tenant {tenant_id} percentages - Input: {tenant_attribution_input_tokens_percentage}, Output: {tenant_attribution_output_tokens_percentage}")
-            tenant_attribution_input_tokens_percentage = 0
-            tenant_attribution_output_tokens_percentage = 0
+            
 
             self.__add_or_update_dict(tenant_attribution_dict, tenant_id, CLAUDE_SONNET_INPUT_TOKENS_LABEL, tenant_attribution_input_tokens_percentage)
             self.__add_or_update_dict(tenant_attribution_dict, tenant_id, CLAUDE_SONNET_OUTPUT_TOKENS_LABEL, tenant_attribution_output_tokens_percentage)
