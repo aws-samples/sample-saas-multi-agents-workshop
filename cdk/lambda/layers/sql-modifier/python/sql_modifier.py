@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT-0
 
 import re
+from typing import Any, Dict, List
 
 def append_tenant_filter(sql: str, tenant_id: str) -> str:
     """
@@ -49,3 +50,10 @@ def append_tenant_filter(sql: str, tenant_id: str) -> str:
         modified_sql = f"{modified_sql} {trailing_clauses}"
     
     return modified_sql
+
+
+def filter_tenant_id(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Filters out tenant_id column from query result rows.
+    """
+    return [{k: v for k, v in row.items() if k != "tenant_id"} for row in rows]

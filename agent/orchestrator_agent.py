@@ -7,6 +7,8 @@ from strands import Agent, tool
 import ops_context
 from log_agent import log_agent_tool
 from kb_agent import kb_agent_tool
+import constants
+import config
 from bedrock_agentcore.tools.code_interpreter_client import code_session
 import asyncio
 import jwt
@@ -66,10 +68,8 @@ class OrchestratorAgent:
             Return raw logs if requested by the user.""",
 
             tools=[log_agent_tool, kb_agent_tool, execute_python],
-            #model_id="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
-            #model_id="us.anthropic.claude-3-5-sonnet-20241022-v2:0"
             model=BedrockModel(
-                model_id="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+                model_id=config.MODEL_ID,
                 boto_client_config=boto_cfg,
             )
         )

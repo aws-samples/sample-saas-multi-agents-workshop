@@ -35,13 +35,13 @@ def lambda_handler(event, context):
     # Assume S3 prefix is set to tenant_id
     s3_prefix = tenantId
     
-    # Extract the notes from the event
+    # Extract the Knowledge Base data from the event
     if 'body' in event:
-        notes = event['body']
+        kb_data = event['body']
         # Log the body content
-        logger.debug("Received notes:", notes)
+        logger.debug("Received Knowledge Base data:", kb_data)
     else:
-        notes = "No notes found"
+        kb_data = "No Knowledge Base data found"
     
     session = boto3.Session(
         aws_access_key_id = aws_access_key_id,
@@ -54,15 +54,15 @@ def lambda_handler(event, context):
     
     # Generate a unique file name with current time to avoid duplication
     current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    file_name = f"meeting_notes_{current_time}.txt"
+    file_name = f"kb_data_{current_time}.txt"
     
-    # Upload the meeting notes to the S3 prefix
+    # Upload the Knowledge Base data to the S3 prefix
     s3_key = f"{s3_prefix}/{file_name}"
     
     try:
-        # Upload the meeting notes to S3
-        s3.put_object(Bucket=s3_bucket, Key=s3_key, Body=notes)
-        logger.info(f"Meeting notes uploaded to S3://{s3_prefix}/{file_name}")
+        # Upload the Knowledge Base data to S3
+        s3.put_object(Bucket=s3_bucket, Key=s3_key, Body=kb_data)
+        logger.info(f"Knowledge Base data uploaded to S3://{s3_prefix}/{file_name}")
         
         # Create metadata JSON file with tenant_id
         metadata_content = {
@@ -83,7 +83,7 @@ def lambda_handler(event, context):
         return {
             'statusCode': 200,
             'body': json.dumps({
-                'message': 'Received your notes and created metadata',
+                'message': 'Received your Knowledge Base data and created metadata',
             })
         }
         
@@ -96,7 +96,7 @@ def lambda_handler(event, context):
             })
         }
     except s3.exceptions.ClientError as e:
-        logger.error(f"Client error when uploading meeting notes to S3: {e}")
+        logger.error(f"Client error when uploading Knowledge Base data to S3: {e}")
         return {
             'statusCode': 400,
             'body': json.dumps({
@@ -105,7 +105,7 @@ def lambda_handler(event, context):
             })
         }
     except Exception as e:
-        logger.error(f"Error uploading meeting notes to S3: {e}")
+        logger.error(f"Error uploading Knowledge Base data to S3: {e}")
         return {
             'statusCode': 500,
             'body': json.dumps({

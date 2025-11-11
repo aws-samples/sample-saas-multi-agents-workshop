@@ -24,8 +24,8 @@ CUR_TABLE_NAME = os.getenv("CUR_TABLE_NAME")
 RETRY_COUNT = 100
 SMARTRESOLVE_LOG_GROUP = "/smartresolve/log-group"
 
-CLAUDE_SONNET_INPUT_TOKENS_LABEL = "USE1-Bedrock-Model-Anthropic-Claude-3-7-Input-Tokens"
-CLAUDE_SONNET_OUTPUT_TOKENS_LABEL = "USE1-Bedrock-Model-Anthropic-Claude-3-7-Output-Tokens"
+CLAUDE_SONNET_INPUT_TOKENS_LABEL = "USE1-Bedrock-Model-Anthropic-Claude-4-Input-Tokens"
+CLAUDE_SONNET_OUTPUT_TOKENS_LABEL = "USE1-Bedrock-Model-Anthropic-Claude-4-Output-Tokens"
 
 class InvokeModelTenantCost():
     def __init__(self, start_date_time, end_date_time):

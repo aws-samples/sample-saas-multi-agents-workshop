@@ -8,7 +8,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 import boto3
-from sql_modifier import append_tenant_filter
+from sql_modifier import append_tenant_filter, filter_tenant_id
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -122,16 +122,16 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         db = event.get("database") or ATHENA_DB
         rows = _exec(sql, athena_client, database=db)
+        filtered_rows = filter_tenant_id(rows)
 
-        for row in rows:
+        for row in filtered_rows:
             logger.info(json.dumps({"tenant_id": event.get('tenant_id'), "row": row}))        
 
         return {
             "status": "success",
-            "tenant_id": tenant_id,
             "query": sql,
             "database": db,
-            "rows": rows,
+            "rows": filtered_rows,
         }
     except Exception as e:
         logger.exception("Athena query failed")

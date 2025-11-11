@@ -13,6 +13,7 @@ from strands.models import BedrockModel
 import wrapped_tool
 import ops_context
 import constants
+import config
 from metrics_manager import record_metric
 
 log = logging.Logger(__name__)
@@ -61,10 +62,8 @@ def kb_agent_tool(query: str, top_k: int = 5) -> str:
             name="kb_agent",
             system_prompt=f"""You are a knowledge base agent that searches Amazon Bedrock Knowledge base for solutions to application errors.""",
             tools=tools,
-            #model_id="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
-            #model_id="us.anthropic.claude-3-5-sonnet-20241022-v2:0"
             model=BedrockModel(
-                model_id="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+                model_id=config.MODEL_ID,
                 boto_client_config=boto_cfg,
             )
         )

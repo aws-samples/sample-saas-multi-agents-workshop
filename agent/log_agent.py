@@ -11,6 +11,7 @@ import logging
 import ops_context
 import wrapped_tool
 import constants
+import config
 from metrics_manager import record_metric
 
 log = logging.Logger(__name__)
@@ -85,10 +86,8 @@ def log_agent_tool(query: str) -> str:
             name="log_agent",
             system_prompt=system_prompt,
             tools=tools,
-            #model_id="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
-            #model_id="us.anthropic.claude-3-5-sonnet-20241022-v2:0"
             model=BedrockModel(
-                model_id="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+                model_id=config.MODEL_ID,
                 boto_client_config=boto_cfg,
             )
         )

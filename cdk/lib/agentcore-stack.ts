@@ -657,7 +657,7 @@ export class AgentCoreStack extends cdk.NestedStack {
                 "bedrock-agentcore:InvokeCodeInterpreter",
               ],
               resources: [
-                `arn:aws:bedrock-agentcore:${this.region}:aws:code-interpreter/aws.codeinterpreter.v1`,
+                `arn:aws:bedrock-agentcore:*:aws:code-interpreter/aws.codeinterpreter.v1`,
               ],
             }),
             // Bedrock AgentCore Identity OAuth2

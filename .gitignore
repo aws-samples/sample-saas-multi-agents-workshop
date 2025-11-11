@@ -20,3 +20,6 @@ cdk/node_modules
 
 agent/.bedrock_agentcore.yaml
 agent/constants.py
+
+# Virtual environment
+data/venv/

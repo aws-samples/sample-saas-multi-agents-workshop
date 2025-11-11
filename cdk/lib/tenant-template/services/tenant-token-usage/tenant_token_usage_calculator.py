@@ -11,7 +11,7 @@ tracer = Tracer()
 logger = Logger()
 
 
-RAG_SERVICE_CLOUDWATCH_LOGS= "/aws/lambda/ragService"
+RAG_SERVICE_CLOUDWATCH_LOGS= "/aws/lambda/ragResolutionService"
 logs = boto3.client('logs')
 athena = boto3.client('athena')
 dynamodb = boto3.resource('dynamodb')
