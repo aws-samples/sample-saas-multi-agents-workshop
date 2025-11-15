@@ -92,29 +92,27 @@ export class Services extends Construct {
     );
 
     // Create role only if tenantTokenUsageTable is provided
-    const tenantTokenUsageTableAccessRole = props.tenantTokenUsageTable ? new Role(
-      this,
-      "TenantTokenUsageTableAccessRole",
-      {
-        assumedBy: new ServicePrincipal("lambda.amazonaws.com"),
-        inlinePolicies: {
-          DynamoDBPolicy: new PolicyDocument({
-            statements: [
-              new PolicyStatement({
-                effect: Effect.ALLOW,
-                actions: ["dynamodb:GetItem"],
-                resources: [props.tenantTokenUsageTable.tableArn],
-                conditions: {
-                  "ForAllValues:StringEquals": {
-                    "dynamodb:LeadingKeys": ["${aws:PrincipalTag/TenantId}"],
+    const tenantTokenUsageTableAccessRole = props.tenantTokenUsageTable
+      ? new Role(this, "TenantTokenUsageTableAccessRole", {
+          assumedBy: new ServicePrincipal("lambda.amazonaws.com"),
+          inlinePolicies: {
+            DynamoDBPolicy: new PolicyDocument({
+              statements: [
+                new PolicyStatement({
+                  effect: Effect.ALLOW,
+                  actions: ["dynamodb:GetItem"],
+                  resources: [props.tenantTokenUsageTable.tableArn],
+                  conditions: {
+                    "ForAllValues:StringEquals": {
+                      "dynamodb:LeadingKeys": ["${aws:PrincipalTag/TenantId}"],
+                    },
                   },
-                },
-              }),
-            ],
-          }),
-        },
-      }
-    ) : undefined;
+                }),
+              ],
+            }),
+          },
+        })
+      : undefined;
 
     // Only add statements if the role exists
     if (tenantTokenUsageTableAccessRole) {
@@ -158,9 +156,8 @@ export class Services extends Construct {
               effect: Effect.ALLOW,
               actions: ["bedrock:InvokeModel", "bedrock:GetInferenceProfile"],
               resources: [
-                "arn:aws:bedrock:*::foundation-model/amazon.nova-micro-v1:0",
-                `arn:aws:bedrock:*:${accountId}:inference-profile/us.amazon.nova-micro-v1:0`
-                ,
+                "arn:aws:bedrock:*::foundation-model/global.anthropic.claude-sonnet-4-20250514-v1:0",
+                `arn:aws:bedrock:*:${accountId}:inference-profile/global.anthropic.claude-sonnet-4-20250514-v1:0`,
               ],
             }),
             new PolicyStatement({
@@ -236,8 +233,10 @@ export class Services extends Construct {
           ASSUME_ROLE_ARN: abacExecRole.roleArn,
           CP_API_GW_URL: props.controlPlaneApiGwUrl,
           ...(props.tenantTokenUsageTable && {
-            TENANT_TOKEN_USAGE_DYNAMODB_TABLE: props.tenantTokenUsageTable.tableName,
-            TENANT_TOKEN_USAGE_ROLE_ARN: tenantTokenUsageTableAccessRole?.roleArn || '',
+            TENANT_TOKEN_USAGE_DYNAMODB_TABLE:
+              props.tenantTokenUsageTable.tableName,
+            TENANT_TOKEN_USAGE_ROLE_ARN:
+              tenantTokenUsageTableAccessRole?.roleArn || "",
           }),
         },
       }
@@ -265,40 +264,48 @@ export class Services extends Construct {
         ),
       ],
     });
-   
-    // RAG Resolution lambda
-    const ragResolutionLambdaExecRole = new Role(this, "RagResolutionLambdaExecRole", {
-      assumedBy: new ServicePrincipal("lambda.amazonaws.com"),
-      managedPolicies: [
-        ManagedPolicy.fromAwsManagedPolicyName(
-          "CloudWatchLambdaInsightsExecutionRolePolicy"
-        ),
-        ManagedPolicy.fromAwsManagedPolicyName(
-          "service-role/AWSLambdaBasicExecutionRole"
-        ),
-      ],
-    });
 
-    const ragResolutionService = new python.PythonFunction(this, "RagResolutionService", {
-      functionName: "ragResolutionService",
-      entry: path.join(__dirname, "services/ragResolutionService/"),
-      runtime: Runtime.PYTHON_3_12,
-      architecture: Architecture.ARM_64,
-      index: "rag_resolution_service.py",
-      handler: "lambda_handler",
-      timeout: Duration.seconds(60),
-      memorySize: 256,
-      role: ragResolutionLambdaExecRole,
-      layers: [props.lambdaPowerToolsLayer, props.utilsLayer],
-      bundling: {
-        platform: "linux/arm64",
-      },
-      environment: {
-        POWERTOOLS_SERVICE_NAME: "RagResolutionService",
-        POWERTOOLS_METRICS_NAMESPACE: "SaaSRagResolutionGenAI",
-      },
-    });
-    
+    // RAG Resolution lambda
+    const ragResolutionLambdaExecRole = new Role(
+      this,
+      "RagResolutionLambdaExecRole",
+      {
+        assumedBy: new ServicePrincipal("lambda.amazonaws.com"),
+        managedPolicies: [
+          ManagedPolicy.fromAwsManagedPolicyName(
+            "CloudWatchLambdaInsightsExecutionRolePolicy"
+          ),
+          ManagedPolicy.fromAwsManagedPolicyName(
+            "service-role/AWSLambdaBasicExecutionRole"
+          ),
+        ],
+      }
+    );
+
+    const ragResolutionService = new python.PythonFunction(
+      this,
+      "RagResolutionService",
+      {
+        functionName: "ragResolutionService",
+        entry: path.join(__dirname, "services/ragResolutionService/"),
+        runtime: Runtime.PYTHON_3_12,
+        architecture: Architecture.ARM_64,
+        index: "rag_resolution_service.py",
+        handler: "lambda_handler",
+        timeout: Duration.seconds(60),
+        memorySize: 256,
+        role: ragResolutionLambdaExecRole,
+        layers: [props.lambdaPowerToolsLayer, props.utilsLayer],
+        bundling: {
+          platform: "linux/arm64",
+        },
+        environment: {
+          POWERTOOLS_SERVICE_NAME: "RagResolutionService",
+          POWERTOOLS_METRICS_NAMESPACE: "SaaSRagResolutionGenAI",
+        },
+      }
+    );
+
     resolution.addMethod(
       "POST",
       new LambdaIntegration(ragResolutionService, { proxy: true }),
