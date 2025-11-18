@@ -15,7 +15,7 @@ help() {
   echo "  refresh-tokens"
   echo "  create-tenant-registration <tenant_name>"
   echo "  get-tenant-registration <tenant_registration_id>"
-  echo "  get-all-tenant-registrations <limit> <next_token>"
+  echo "  get-all-tenants-registration <limit> <next_token>"
   echo "  update-tenant-registration <tenant_registration_id> <key> <value>"
   echo "  delete-tenant-registration <tenant_registration_id>"
   echo "  get-tenant <tenant_id>"
@@ -178,8 +178,7 @@ create_tenant_registration() {
         "tier": "basic"
         },
       "tenantRegistrationData": {
-        "registrationStatus": "In progress",
-        "tenantRegistrationData1": "test"
+        "registrationStatus": "In progress"
       }
     }')
 
@@ -217,7 +216,7 @@ get_tenant_registration() {
   fi
 }
 
-get_all_tenant_registrations() {
+get_all_tenants_registration() {
   source_config
   MY_LIMIT="${1:-10}"
   NEXT_TOKEN="${2:-}"
@@ -657,8 +656,8 @@ case "$1" in
   get_tenant_registration "$2"
   ;;
 
-"get-all-tenant-registrations")
-  get_all_tenant_registrations "$2" "$3"
+"get-all-tenants-registration")
+  get_all_tenants_registration "$2" "$3"
   ;;
 
 "update-tenant-registration")
