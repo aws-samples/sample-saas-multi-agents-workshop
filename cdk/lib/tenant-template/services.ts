@@ -163,6 +163,16 @@ export class Services extends Construct {
             }),
             new PolicyStatement({
               effect: Effect.ALLOW,
+              actions: ["aws-marketplace:ViewSubscriptions", "aws-marketplace:Subscribe", "aws-marketplace:Unsubscribe"],
+              resources: ["*"],
+              conditions: {
+                "ForAllValues:StringEquals": {
+                  "aws-marketplace:ProductId": ["prod-4pmewlybdftbs", "prod-mxcfnwvpd6kb4", "prod-xdkflymybwmvi"]
+                },
+            }
+        }),
+            new PolicyStatement({
+              effect: Effect.ALLOW,
               actions: [
                 "s3:PutObject",
                 "s3:GetObject",
