@@ -34,29 +34,21 @@ def kb_agent_tool(query: str, top_k: int = 5) -> str:
     if not kb_gateway_url:
         raise ValueError("KB_GATEWAY_URL environment variable is not set")
 
+    decoded = ops_context.decode_jwt_claims(access_token)
+    tenant_id = decoded.get("tenantId")
+
     streamable_http_mcp_client = MCPClient(
         lambda: streamablehttp_client(
             kb_gateway_url,
             headers={
                 "Authorization": f"{access_token}",
+                "X-Tenant-ID": tenant_id
             },
         )
     )
 
-    decoded = ops_context.decode_jwt_claims(access_token)
-    tenant_id = decoded.get("tenantId")
-
     with streamable_http_mcp_client:
-        tools = []
-
-        for t in streamable_http_mcp_client.list_tools_sync():
-            if t.tool_name != "x_amz_bedrock_agentcore_search":
-                tool = wrapped_tool.WrappedTool(t)
-                tool.bind_param("tenant_id", tenant_id)
-
-                tools.append(tool)
-            else:
-                tools.append(t)
+        tools = list(streamable_http_mcp_client.list_tools_sync())
 
         kb_agent = Agent(
             name="kb_agent",

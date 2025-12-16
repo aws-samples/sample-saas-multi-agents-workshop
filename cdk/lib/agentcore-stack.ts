@@ -25,6 +25,7 @@ export class AgentCoreStack extends cdk.NestedStack {
   public readonly agentCoreRoleArn: string;
   public readonly logMcpLambdaArn: string;
   public readonly kbMcpLambdaArn: string;
+  public readonly gatewayInterceptorArn: string;
 
   constructor(scope: Construct, id: string, props: AgentCoreStackProps) {
     super(scope, id, props);
@@ -82,12 +83,14 @@ export class AgentCoreStack extends cdk.NestedStack {
     // const abacRole = this.createAbacRole(basicRole, s3BucketName, props.athenaResultsBucketName, props.athenaDatabase, props.athenaTable, props.athenaWorkgroup);
     // const logMcpLambda = this.createLogMcpHandlerLambda(s3BucketName, props.athenaResultsBucketName, props.athenaDatabase, props.athenaTable, props.athenaWorkgroup, basicRole, abacRole);
     const kbMcpLambda = this.createKbMcpHandlerLambda(kbId);
+    const gatewayInterceptorLambda = this.createGatewayInterceptorLambda();
 
     // Create IAM role for AgentCore Gateway
     const agentCoreRole = this.createAgentCoreRole();
     logMcpLambda.grantInvoke(agentCoreRole);
     kbMcpLambda.grantInvoke(agentCoreRole);
-
+    gatewayInterceptorLambda.grantInvoke(agentCoreRole);
+    
     // Store outputs as public properties
     this.userPoolId = userPool.userPoolId;
     this.userClientId = userClient.userPoolClientId;
@@ -96,6 +99,7 @@ export class AgentCoreStack extends cdk.NestedStack {
     this.agentCoreRoleArn = agentCoreRole.roleArn;
     this.logMcpLambdaArn = logMcpLambda.functionArn;
     this.kbMcpLambdaArn = kbMcpLambda.functionArn;
+    this.gatewayInterceptorArn = gatewayInterceptorLambda.functionArn;
 
     // Create CloudWatch log groups for gateway logs
     const logGatewayLogGroup = this.createGatewayLogGroup("LogGateway");
@@ -149,6 +153,11 @@ export class AgentCoreStack extends cdk.NestedStack {
     new cdk.CfnOutput(this, "AthenaResultsBucketName", {
       value: athenaResultsBucket.bucketName,
       description: "The name of the Athena results bucket",
+    });
+
+    new cdk.CfnOutput(this, "GatewayInterceptorArn", {
+      value: gatewayInterceptorLambda.functionArn,
+      description: "The ARN of the Gateway Interceptor Lambda",
     });
   }
 
@@ -442,6 +451,38 @@ export class AgentCoreStack extends cdk.NestedStack {
         BEDROCK_KB_ID: kbId,
         KB_TOP_K: "8",
       },
+    });
+  }
+
+  private createGatewayInterceptorRole(): iam.Role {
+    return new iam.Role(this, "GatewayInterceptorRole", {
+      roleName: "AgentCore-Gateway-Interceptor-Role",
+      assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName(
+          "service-role/AWSLambdaBasicExecutionRole"
+        ),
+      ],
+      description: "IAM role for Gateway Interceptor Lambda",
+    });
+  }
+
+  private createGatewayInterceptorLambda(): lambda.Function {
+    const interceptorRole = this.createGatewayInterceptorRole(); 
+    return new lambda.Function(this, "GatewayInterceptor", {
+      functionName: "AgentCore-Gateway-Interceptor",
+      description: "Request Gateway interceptor to extract tenant_id from JWT",
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: "handler.lambda_handler",
+      code: lambda.Code.fromAsset(
+        path.join(__dirname, "../lambda/gateway-interceptor")
+      ),
+      role:interceptorRole,
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 256,
+      environment: {
+        LOG_LEVEL: "INFO"
+      }
     });
   }
 

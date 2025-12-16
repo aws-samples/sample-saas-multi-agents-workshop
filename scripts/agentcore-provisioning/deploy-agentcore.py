@@ -40,6 +40,7 @@ def get_stack_outputs():
         "AgentCoreRoleArn": os.environ.get("AGENT_CORE_ROLE_ARN"),
         "LogMcpLambdaArn": os.environ.get("LOG_MCP_LAMBDA_ARN"),
         "KbMcpLambdaArn": os.environ.get("KB_MCP_LAMBDA_ARN"),
+        "GatewayInterceptorArn": os.environ.get("GATEWAY_INTERCEPTOR_ARN"), 
     }
     
     # Check if all required environment variables are set
@@ -296,6 +297,7 @@ def create_log_mcp_server(
     m2m_client_id,
     region,
     log_lambda_arn,
+    interceptor_lambda_arn,
     recreate=False,
 ):
     logger.info("1.1: Creating Log MCP Server")
@@ -323,6 +325,18 @@ def create_log_mcp_server(
                     "allowedClients": [user_client_id, m2m_client_id],
                 }
             },
+            interceptorConfigurations=[
+            {
+                'interceptor': {
+                    'lambda': {
+                        'arn': interceptor_lambda_arn
+                    }
+                },
+                'interceptionPoints': ['REQUEST'],
+                'inputConfiguration': {
+                    'passRequestHeaders': True
+                }
+            }],
             exceptionLevel="DEBUG",
         )
         gateway_id = response["gatewayId"]
@@ -357,12 +371,7 @@ def create_log_mcp_server(
                                                 "type": "string",
                                                 "description": "Amazon Athena-compatible search query",
                                             },
-                                            "tenant_id": {
-                                                "type": "string",
-                                                "description": "Tenant identifier for multi-tenant log isolation",
-                                            },
                                         },
-                                        "required": ["query", "tenant_id"],
                                     },
                                 }
                             ]
@@ -386,6 +395,7 @@ def create_kb_mcp_server(
     m2m_client_id,
     region,
     kb_lambda_arn,
+    interceptor_lambda_arn,
     recreate=False,
 ):
     logger.info("1.2: Creating KB MCP Server")
@@ -413,6 +423,18 @@ def create_kb_mcp_server(
                     "allowedClients": [user_client_id, m2m_client_id],
                 }
             },
+            interceptorConfigurations=[
+            {
+                'interceptor': {
+                    'lambda': {
+                        'arn': interceptor_lambda_arn
+                    }
+                },
+                'interceptionPoints': ['REQUEST'],
+                'inputConfiguration': {
+                    'passRequestHeaders': True
+                }
+            }],
             exceptionLevel="DEBUG",
         )
         gateway_id = response["gatewayId"]
@@ -447,16 +469,11 @@ def create_kb_mcp_server(
                                                 "type": "string",
                                                 "description": "Free text search query",
                                             },
-                                            "tenant_id": {
-                                                "type": "string",
-                                                "description": "Tenant identifier for multi-tenant knowledge base isolation",
-                                            },
                                             "top_k": {
                                                 "type": "integer",
                                                 "description": "Maximum number of results to return",
                                             },
                                         },
-                                        "required": ["query", "tenant_id"],
                                     },
                                 }
                             ]
@@ -679,6 +696,7 @@ def main():
     role_arn = stack_outputs["AgentCoreRoleArn"]
     log_lambda_arn = stack_outputs["LogMcpLambdaArn"]
     kb_lambda_arn = stack_outputs["KbMcpLambdaArn"]
+    interceptor_lambda_arn  = stack_outputs["GatewayInterceptorArn"]
     discovery_url = f"https://cognito-idp.{region}.amazonaws.com/{user_pool_id}/.well-known/openid-configuration"
 
     # Check if resources exist and recreate if needed
@@ -695,6 +713,7 @@ def main():
         m2m_client_id,
         region,
         log_lambda_arn,
+        interceptor_lambda_arn,
         log_exists and args.recreate,
     )
     kb_gateway_id = create_kb_mcp_server(
@@ -704,6 +723,7 @@ def main():
         m2m_client_id,
         region,
         kb_lambda_arn,
+        interceptor_lambda_arn,
         kb_exists and args.recreate,
     )
 
