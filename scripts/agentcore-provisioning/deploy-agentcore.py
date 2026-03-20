@@ -40,6 +40,7 @@ def get_stack_outputs():
         "AgentCoreRoleArn": os.environ.get("AGENT_CORE_ROLE_ARN"),
         "LogMcpLambdaArn": os.environ.get("LOG_MCP_LAMBDA_ARN"),
         "KbMcpLambdaArn": os.environ.get("KB_MCP_LAMBDA_ARN"),
+        "InterceptorLambdaArn": os.environ.get("INTERCEPTOR_LAMBDA_ARN"),
     }
     
     # Check if all required environment variables are set
@@ -73,6 +74,8 @@ def get_stack_outputs():
                 mapped_outputs[key] = stack_outputs["AgentCoreLogMcpLambdaArn"]
             elif key == "KbMcpLambdaArn" and "AgentCoreKbMcpLambdaArn" in stack_outputs:
                 mapped_outputs[key] = stack_outputs["AgentCoreKbMcpLambdaArn"]
+            elif key == "InterceptorLambdaArn" and "AgentCoreInterceptorLambdaArn" in stack_outputs:
+                mapped_outputs[key] = stack_outputs["AgentCoreInterceptorLambdaArn"]
             elif key in stack_outputs:
                 mapped_outputs[key] = stack_outputs[key]
         
@@ -127,6 +130,18 @@ def destroy_gateway(name):
             try:
                 agentcore.delete_gateway(gatewayIdentifier=gateway_id)
                 logger.info(f"Gateway {name} deletion initiated")
+                # Wait for gateway to be fully deleted
+                logger.info(f"Waiting for gateway {gateway_id} to be fully deleted...")
+                start_time = time.time()
+                while time.time() - start_time < 120:
+                    try:
+                        resp = agentcore.get_gateway(gatewayIdentifier=gateway_id)
+                        status = resp.get("status", "UNKNOWN")
+                        logger.info(f"Gateway {gateway_id} status: {status}")
+                        time.sleep(10)
+                    except Exception:
+                        logger.info(f"Gateway {gateway_id} fully deleted")
+                        break
             except Exception as e:
                 logger.error(f"Error deleting gateway {name}: {e}")
         else:
@@ -213,6 +228,9 @@ def wait_for_gateway_active(agentcore, gateway_id, max_wait_time=300):
             # Wait before checking again
             time.sleep(10)
             
+        except agentcore.exceptions.ResourceNotFoundException:
+            logger.warning(f"Gateway {gateway_id} not found (deleted)")
+            return False
         except Exception as e:
             logger.warning(f"Error checking gateway status: {e}")
             time.sleep(10)
@@ -289,6 +307,45 @@ def create_gateway_target_with_retry(agentcore, gateway_id, target_name, target_
     raise Exception(f"Failed to create {target_name} after {max_retries} attempts")
 
 
+def _ensure_interceptor_attached(agentcore, gateway_id, interceptor_lambda_arn, gateway_name):
+    """Attach interceptor to an existing gateway via update_gateway if not already configured."""
+    try:
+        gw = agentcore.get_gateway(gatewayIdentifier=gateway_id)
+        existing_interceptors = gw.get("interceptorConfigurations", [])
+
+        # Check if interceptor is already attached
+        for ic in existing_interceptors:
+            lam = ic.get("interceptor", {}).get("lambda", {}).get("arn", "")
+            if lam == interceptor_lambda_arn:
+                logger.info(f"Interceptor already attached to {gateway_name}")
+                return
+
+        logger.info(f"Attaching interceptor to existing {gateway_name} ({gateway_id})")
+        interceptor_config = [
+            {
+                "interceptor": {
+                    "lambda": {"arn": interceptor_lambda_arn}
+                },
+                "interceptionPoints": ["REQUEST"],
+                "inputConfiguration": {"passRequestHeaders": True},
+            }
+        ]
+
+        # Build update kwargs from current gateway config
+        update_kwargs = {
+            "gatewayIdentifier": gateway_id,
+            "interceptorConfigurations": interceptor_config,
+        }
+
+        agentcore.update_gateway(**update_kwargs)
+        logger.info(f"Interceptor attached to {gateway_name}, waiting for READY...")
+        wait_for_gateway_active(agentcore, gateway_id)
+
+    except Exception as e:
+        logger.error(f"Failed to attach interceptor to {gateway_name}: {e}")
+        raise
+
+
 def create_log_mcp_server(
     role_arn,
     user_pool_id,
@@ -296,6 +353,7 @@ def create_log_mcp_server(
     m2m_client_id,
     region,
     log_lambda_arn,
+    interceptor_lambda_arn=None,
     recreate=False,
 ):
     logger.info("1.1: Creating Log MCP Server")
@@ -311,7 +369,7 @@ def create_log_mcp_server(
 
     if not gateway_id:
         discovery_url = f"https://cognito-idp.{region}.amazonaws.com/{user_pool_id}/.well-known/openid-configuration"
-        response = agentcore.create_gateway(
+        gateway_kwargs = dict(
             name="LogGateway",
             roleArn=role_arn,
             protocolType="MCP",
@@ -325,6 +383,17 @@ def create_log_mcp_server(
             },
             exceptionLevel="DEBUG",
         )
+        if interceptor_lambda_arn:
+            gateway_kwargs["interceptorConfigurations"] = [
+                {
+                    "interceptor": {
+                        "lambda": {"arn": interceptor_lambda_arn}
+                    },
+                    "interceptionPoints": ["REQUEST"],
+                    "inputConfiguration": {"passRequestHeaders": True},
+                }
+            ]
+        response = agentcore.create_gateway(**gateway_kwargs)
         gateway_id = response["gatewayId"]
         
         # Wait for gateway to be ready before creating targets
@@ -334,6 +403,10 @@ def create_log_mcp_server(
         # Even if gateway exists, make sure it's ready
         if not wait_for_gateway_active(agentcore, gateway_id):
             raise Exception(f"Existing gateway {gateway_id} is not in READY state")
+
+        # Ensure interceptor is attached to existing gateway
+        if interceptor_lambda_arn:
+            _ensure_interceptor_attached(agentcore, gateway_id, interceptor_lambda_arn, "LogGateway")
 
     targets = agentcore.list_gateway_targets(gatewayIdentifier=gateway_id)["items"]
     if not next((t for t in targets if t["name"] == "LogSearchTarget"), None):
@@ -357,12 +430,8 @@ def create_log_mcp_server(
                                                 "type": "string",
                                                 "description": "Amazon Athena-compatible search query",
                                             },
-                                            "tenant_id": {
-                                                "type": "string",
-                                                "description": "Tenant identifier for multi-tenant log isolation",
-                                            },
                                         },
-                                        "required": ["query", "tenant_id"],
+                                        "required": ["query"],
                                     },
                                 }
                             ]
@@ -386,6 +455,7 @@ def create_kb_mcp_server(
     m2m_client_id,
     region,
     kb_lambda_arn,
+    interceptor_lambda_arn=None,
     recreate=False,
 ):
     logger.info("1.2: Creating KB MCP Server")
@@ -401,7 +471,7 @@ def create_kb_mcp_server(
 
     if not gateway_id:
         discovery_url = f"https://cognito-idp.{region}.amazonaws.com/{user_pool_id}/.well-known/openid-configuration"
-        response = agentcore.create_gateway(
+        gateway_kwargs = dict(
             name="KnowledgeBaseGateway",
             roleArn=role_arn,
             protocolType="MCP",
@@ -415,6 +485,17 @@ def create_kb_mcp_server(
             },
             exceptionLevel="DEBUG",
         )
+        if interceptor_lambda_arn:
+            gateway_kwargs["interceptorConfigurations"] = [
+                {
+                    "interceptor": {
+                        "lambda": {"arn": interceptor_lambda_arn}
+                    },
+                    "interceptionPoints": ["REQUEST"],
+                    "inputConfiguration": {"passRequestHeaders": True},
+                }
+            ]
+        response = agentcore.create_gateway(**gateway_kwargs)
         gateway_id = response["gatewayId"]
         
         # Wait for gateway to be ready before creating targets
@@ -424,6 +505,10 @@ def create_kb_mcp_server(
         # Even if gateway exists, make sure it's ready
         if not wait_for_gateway_active(agentcore, gateway_id):
             raise Exception(f"Existing gateway {gateway_id} is not in READY state")
+
+        # Ensure interceptor is attached to existing gateway
+        if interceptor_lambda_arn:
+            _ensure_interceptor_attached(agentcore, gateway_id, interceptor_lambda_arn, "KnowledgeBaseGateway")
 
     targets = agentcore.list_gateway_targets(gatewayIdentifier=gateway_id)["items"]
     if not next((t for t in targets if t["name"] == "KBSearchTarget"), None):
@@ -447,16 +532,12 @@ def create_kb_mcp_server(
                                                 "type": "string",
                                                 "description": "Free text search query",
                                             },
-                                            "tenant_id": {
-                                                "type": "string",
-                                                "description": "Tenant identifier for multi-tenant knowledge base isolation",
-                                            },
                                             "top_k": {
                                                 "type": "integer",
                                                 "description": "Maximum number of results to return",
                                             },
                                         },
-                                        "required": ["query", "tenant_id"],
+                                        "required": ["query"],
                                     },
                                 }
                             ]
@@ -679,6 +760,7 @@ def main():
     role_arn = stack_outputs["AgentCoreRoleArn"]
     log_lambda_arn = stack_outputs["LogMcpLambdaArn"]
     kb_lambda_arn = stack_outputs["KbMcpLambdaArn"]
+    interceptor_lambda_arn = stack_outputs.get("InterceptorLambdaArn")
     discovery_url = f"https://cognito-idp.{region}.amazonaws.com/{user_pool_id}/.well-known/openid-configuration"
 
     # Check if resources exist and recreate if needed
@@ -695,6 +777,7 @@ def main():
         m2m_client_id,
         region,
         log_lambda_arn,
+        interceptor_lambda_arn,
         log_exists and args.recreate,
     )
     kb_gateway_id = create_kb_mcp_server(
@@ -704,6 +787,7 @@ def main():
         m2m_client_id,
         region,
         kb_lambda_arn,
+        interceptor_lambda_arn,
         kb_exists and args.recreate,
     )
 

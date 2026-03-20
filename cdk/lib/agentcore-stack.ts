@@ -25,6 +25,7 @@ export class AgentCoreStack extends cdk.NestedStack {
   public readonly agentCoreRoleArn: string;
   public readonly logMcpLambdaArn: string;
   public readonly kbMcpLambdaArn: string;
+  public readonly interceptorLambdaArn: string;
 
   constructor(scope: Construct, id: string, props: AgentCoreStackProps) {
     super(scope, id, props);
@@ -83,10 +84,14 @@ export class AgentCoreStack extends cdk.NestedStack {
     // const logMcpLambda = this.createLogMcpHandlerLambda(s3BucketName, props.athenaResultsBucketName, props.athenaDatabase, props.athenaTable, props.athenaWorkgroup, basicRole, abacRole);
     const kbMcpLambda = this.createKbMcpHandlerLambda(kbId);
 
+    // Create Gateway Interceptor Lambda
+    const interceptorLambda = this.createInterceptorLambda();
+
     // Create IAM role for AgentCore Gateway
     const agentCoreRole = this.createAgentCoreRole();
     logMcpLambda.grantInvoke(agentCoreRole);
     kbMcpLambda.grantInvoke(agentCoreRole);
+    interceptorLambda.grantInvoke(agentCoreRole);
 
     // Store outputs as public properties
     this.userPoolId = userPool.userPoolId;
@@ -96,6 +101,7 @@ export class AgentCoreStack extends cdk.NestedStack {
     this.agentCoreRoleArn = agentCoreRole.roleArn;
     this.logMcpLambdaArn = logMcpLambda.functionArn;
     this.kbMcpLambdaArn = kbMcpLambda.functionArn;
+    this.interceptorLambdaArn = interceptorLambda.functionArn;
 
     // Create CloudWatch log groups for gateway logs
     const logGatewayLogGroup = this.createGatewayLogGroup("LogGateway");
@@ -139,6 +145,11 @@ export class AgentCoreStack extends cdk.NestedStack {
     new cdk.CfnOutput(this, "KbMcpLambdaArn", {
       value: kbMcpLambda.functionArn,
       description: "The ARN of the KB MCP Lambda",
+    });
+
+    new cdk.CfnOutput(this, "InterceptorLambdaArn", {
+      value: interceptorLambda.functionArn,
+      description: "The ARN of the Gateway Interceptor Lambda",
     });
 
     new cdk.CfnOutput(this, "AgentCoreRoleArn", {
@@ -442,6 +453,21 @@ export class AgentCoreStack extends cdk.NestedStack {
         BEDROCK_KB_ID: kbId,
         KB_TOP_K: "8",
       },
+    });
+  }
+
+  private createInterceptorLambda(): lambda.Function {
+    return new lambda.Function(this, "GatewayInterceptor", {
+      functionName: "AgentCore-GatewayInterceptor",
+      description:
+        "Gateway interceptor Lambda that extracts tenantId from JWT claims and injects into tool payloads",
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: "handler.handler",
+      code: lambda.Code.fromAsset(
+        path.join(__dirname, "../lambda/gateway-interceptor")
+      ),
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 256,
     });
   }
 
