@@ -78,6 +78,7 @@ if [[ "$STACK_OPERATION" == "create" || "$STACK_OPERATION" == "update" ]]; then
     AGENT_CORE_ROLE_ARN=$(aws cloudformation describe-stacks --stack-name $COMMON_RESOURCES_STACK --query "Stacks[0].Outputs[?OutputKey=='AgentCoreRoleArn'].OutputValue" --output text 2>/dev/null || echo "")
     LOG_MCP_LAMBDA_ARN=$(aws cloudformation describe-stacks --stack-name $COMMON_RESOURCES_STACK --query "Stacks[0].Outputs[?OutputKey=='AgentCoreLogMcpLambdaArn'].OutputValue" --output text 2>/dev/null || echo "")
     KB_MCP_LAMBDA_ARN=$(aws cloudformation describe-stacks --stack-name $COMMON_RESOURCES_STACK --query "Stacks[0].Outputs[?OutputKey=='AgentCoreKbMcpLambdaArn'].OutputValue" --output text 2>/dev/null || echo "")
+    INTERCEPTOR_LAMBDA_ARN=$(aws cloudformation describe-stacks --stack-name $COMMON_RESOURCES_STACK --query "Stacks[0].Outputs[?OutputKey=='AgentCoreInterceptorLambdaArn'].OutputValue" --output text 2>/dev/null || echo "")
     
     # Export environment variables for deploy-agentcore.py
     export USER_POOL_ID
@@ -87,6 +88,8 @@ if [[ "$STACK_OPERATION" == "create" || "$STACK_OPERATION" == "update" ]]; then
     export AGENT_CORE_ROLE_ARN
     export LOG_MCP_LAMBDA_ARN
     export KB_MCP_LAMBDA_ARN
+    export INTERCEPTOR_LAMBDA_ARN
+    export AWS_REGION="$REGION"
     export AWS_DEFAULT_REGION="$REGION"
     
     # Check if we have the required parameters

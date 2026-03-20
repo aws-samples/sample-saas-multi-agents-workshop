@@ -9,7 +9,6 @@ from strands.models import BedrockModel
 
 import logging
 import ops_context
-import wrapped_tool
 import constants
 import config
 from metrics_manager import record_metric
@@ -41,20 +40,12 @@ def log_agent_tool(query: str) -> str:
         )
     )
 
+    # tenant_id is now injected by the Gateway Interceptor.
     decoded = ops_context.decode_jwt_claims(access_token)
     tenant_id = decoded.get("tenantId")
 
     with streamable_http_mcp_client:
-        tools = []
-
-        for t in streamable_http_mcp_client.list_tools_sync():
-            if t.tool_name != "x_amz_bedrock_agentcore_search":
-                tool = wrapped_tool.WrappedTool(t)
-                tool.bind_param("tenant_id", tenant_id)
-
-                tools.append(tool)
-            else:
-                tools.append(t)
+        tools = streamable_http_mcp_client.list_tools_sync()
             
         system_prompt = """You are a log analysis agent that searches tenant application logs using Amazon Athena-compatible SQL queries.
 
