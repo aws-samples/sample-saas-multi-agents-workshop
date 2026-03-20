@@ -2,6 +2,7 @@ import * as cdk from "aws-cdk-lib";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as cr from "aws-cdk-lib/custom-resources";
 import { Construct } from "constructs";
+import { S3Table, Database, Schema, DataFormat } from "@aws-cdk/aws-glue-alpha";
 
 export interface AthenaStackProps extends cdk.NestedStackProps {
   s3BucketName: string;
@@ -35,81 +36,49 @@ export class AthenaStack extends cdk.NestedStack {
 
   private createAthenaResources(s3BucketName: string) {
     // Create database with custom resource to handle existing
-    const createDatabase = new cr.AwsCustomResource(this, "CreateDatabase", {
-      onCreate: {
-        service: "Glue",
-        action: "createDatabase",
-        parameters: {
-          DatabaseInput: {
-            Name: this.ATHENA_DB,
-            Description: "Database for SaaS logs analysis",
-          },
-        },
-        physicalResourceId: cr.PhysicalResourceId.of(this.ATHENA_DB),
-        ignoreErrorCodesMatching: "AlreadyExistsException",
-      },
-      policy: cr.AwsCustomResourcePolicy.fromSdkCalls({
-        resources: cr.AwsCustomResourcePolicy.ANY_RESOURCE,
-      }),
+    const database = new Database(this, "SaaSLogsDatabase", {
+      databaseName: this.ATHENA_DB,
+      description: "Database for SaaS logs analysis",
     });
 
     // Create table with custom resource to handle existing
-    const createTable = new cr.AwsCustomResource(this, "CreateTable", {
-      onCreate: {
-        service: "Glue",
-        action: "createTable",
-        parameters: {
-          DatabaseName: this.ATHENA_DB,
-          TableInput: {
-            Name: this.ATHENA_TABLE,
-            Description: "Table for tenant logs",
-            TableType: "EXTERNAL_TABLE",
-            Parameters: {
-              classification: "json",
-              typeOfData: "file",
-              "projection.enabled": "true",
-            "projection.tenant_id.type": "injected",
-            "storage.location.template": `s3://${s3BucketName}/\${tenant_id}/`
-          },
-            PartitionKeys: [
-                { Name: "tenant_id", Type: "string" }
-              ],
-            StorageDescriptor: {
-              Columns: [
-                { Name: "timestamp", Type: "string" },
-                { Name: "level", Type: "string" },
-                { Name: "environment", Type: "string" },
-                { Name: "component", Type: "string" },
-                { Name: "correlation_id", Type: "string" },
-                { Name: "request_id", Type: "string" },
-                { Name: "event", Type: "string" },
-                { Name: "path", Type: "string" },
-                { Name: "job", Type: "string" },
-                { Name: "status", Type: "string" },
-                { Name: "entity_id", Type: "string" },
-                { Name: "detail", Type: "string" },
-              ],
-              Location: `s3://${s3BucketName}/`,
-              InputFormat: "org.apache.hadoop.mapred.TextInputFormat",
-              OutputFormat: "org.apache.hadoop.hive.ql.io.IgnoreKeyTextOutputFormat",
-              SerdeInfo: {
-                SerializationLibrary: "org.openx.data.jsonserde.JsonSerDe",
-                Parameters: {
-                  "ignore.malformed.json": "true",
-                },
-              },
-            },
-          },
-        },
-        physicalResourceId: cr.PhysicalResourceId.of(`${this.ATHENA_DB}.${this.ATHENA_TABLE}`),
-        ignoreErrorCodesMatching: "AlreadyExistsException",
+    const table = new S3Table(this, "TenantLogsTable", {
+      database: database,
+      tableName: this.ATHENA_TABLE,
+      bucket: s3.Bucket.fromBucketName(this, "LogsBucket", s3BucketName),
+
+      // Your exact column schema
+      columns: [
+        { name: "timestamp", type: Schema.STRING },
+        { name: "level", type: Schema.STRING },
+        { name: "environment", type: Schema.STRING },
+        { name: "component", type: Schema.STRING },
+        { name: "correlation_id", type: Schema.STRING },
+        { name: "request_id", type: Schema.STRING },
+        { name: "event", type: Schema.STRING },
+        { name: "path", type: Schema.STRING },
+        { name: "job", type: Schema.STRING },
+        { name: "status", type: Schema.STRING },
+        { name: "entity_id", type: Schema.STRING },
+        { name: "detail", type: Schema.STRING },
+      ],
+
+      // Your exact partition config
+      partitionKeys: [{ name: "tenant_id", type: Schema.STRING }],
+
+      // Your exact projection config
+      parameters: {
+        "projection.enabled": "true",
+        "projection.tenant_id.type": "injected",
+        "storage.location.template": `s3://${s3BucketName}/\$\{tenant_id\}/`,
+        classification: "json",
+        typeOfData: "file",
       },
-      policy: cr.AwsCustomResourcePolicy.fromSdkCalls({
-        resources: cr.AwsCustomResourcePolicy.ANY_RESOURCE,
-      }),
+
+      dataFormat: DataFormat.JSON,
     });
 
-    // Add explicit dependency to ensure database is created before table
-    createTable.node.addDependency(createDatabase);
+    // Proper dependency management (no race conditions)
+    table.node.addDependency(database);
   }
 }
