@@ -10,7 +10,6 @@ import os
 from botocore.config import Config as BotocoreConfig
 from strands.models import BedrockModel
 
-import wrapped_tool
 import ops_context
 import constants
 import config
@@ -43,20 +42,12 @@ def kb_agent_tool(query: str, top_k: int = 5) -> str:
         )
     )
 
+    # tenant_id is injected by the Gateway Interceptor.
     decoded = ops_context.decode_jwt_claims(access_token)
     tenant_id = decoded.get("tenantId")
 
     with streamable_http_mcp_client:
-        tools = []
-
-        for t in streamable_http_mcp_client.list_tools_sync():
-            if t.tool_name != "x_amz_bedrock_agentcore_search":
-                tool = wrapped_tool.WrappedTool(t)
-                tool.bind_param("tenant_id", tenant_id)
-
-                tools.append(tool)
-            else:
-                tools.append(t)
+        tools = streamable_http_mcp_client.list_tools_sync()
 
         kb_agent = Agent(
             name="kb_agent",

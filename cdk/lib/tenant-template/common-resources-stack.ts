@@ -408,6 +408,11 @@ export class CommonResourcesStack extends Stack {
       description: "The ARN of the KB MCP Lambda"
     });
 
+    new CfnOutput(this, "AgentCoreInterceptorLambdaArn", {
+      value: this.agentCoreStack.interceptorLambdaArn,
+      description: "The ARN of the Gateway Interceptor Lambda"
+    });
+
     new CfnOutput(this, "AthenaDatabaseName", {
       value: this.athenaStack.ATHENA_DB,
       description: "The name of the Athena database"
