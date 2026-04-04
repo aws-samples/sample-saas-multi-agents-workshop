@@ -12,14 +12,24 @@ The gateway's CUSTOM_JWT authorizer has already validated the token.
 We decode it here (without verification) only to extract the tenantId claim.
 """
 
+import os
 import json
 import logging
 import base64
 import uuid
 from typing import Any, Dict, Optional
 
+import boto3
+
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
+REGION = os.getenv("AWS_REGION", "us-west-2")
+
+ABAC_ROLE_ARN = os.getenv("ABAC_ROLE_ARN")
+
+# Tools that require tenant-scoped ABAC credentials
+ABAC_TOOLS = {"query_logs", "LogSearchTarget___search_logs"}
 
 
 def _decode_jwt_payload(token: str) -> Dict[str, Any]:
@@ -58,12 +68,42 @@ def _extract_tenant_id(headers: Dict[str, str]) -> Optional[str]:
         return None
 
 
+def _assume_tenant_role(tenant_id: str) -> Optional[Dict[str, str]]:
+    """
+    Assume the ABAC role with tenant-scoped session tags.
+
+    Returns temporary credentials dict with AccessKeyId, SecretAccessKey,
+    and SessionToken, or None if ABAC is not configured.
+    """
+    try:
+        sts = boto3.client("sts", region_name=REGION)
+        response = sts.assume_role(
+            RoleArn=ABAC_ROLE_ARN,
+            RoleSessionName=f"tenant-{tenant_id}-session",
+            Tags=[{"Key": "tenant_id", "Value": tenant_id}],
+        )
+        creds = response["Credentials"]
+        return {
+            "access_key_id": creds["AccessKeyId"],
+            "secret_access_key": creds["SecretAccessKey"],
+            "session_token": creds["SessionToken"],
+        }
+    except Exception as e:
+        logger.error(f"Failed to assume ABAC role for tenant {tenant_id}: {e}")
+        raise
+    return None
+
+
 def _inject_tenant_id_into_tool_call(body: Dict[str, Any], tenant_id: str) -> Dict[str, Any]:
     """
     Inject tenant_id into MCP tools/call arguments.
 
     For tools/call requests, the arguments are in body.params.arguments.
     For other MCP methods (tools/list, initialize, etc.), pass through unchanged.
+
+    For tools that require ABAC (listed in ABAC_TOOLS), also assumes a
+    tenant-scoped IAM role and injects temporary credentials so the
+    downstream tool handler doesn't need to manage tenant isolation itself.
     """
     method = body.get("method", "")
     if method != "tools/call":
@@ -71,9 +111,22 @@ def _inject_tenant_id_into_tool_call(body: Dict[str, Any], tenant_id: str) -> Di
 
     params = body.get("params", {})
     arguments = params.get("arguments", {})
+    tool_name = params.get("name", "")
 
     # Inject tenant_id (overwrites any agent-supplied value)
     arguments["tenant_id"] = tenant_id
+
+    # LAB 2: Uncomment block below to inject ABAC credentials for specific tools
+    # logger.info(json.dumps({
+    #     "tool_name": tool_name,
+    #     "ABAC_TOOLS": list(ABAC_TOOLS),
+    #     "tool_in_abac": tool_name in ABAC_TOOLS,
+    #     "ABAC_ROLE_ARN": ABAC_ROLE_ARN,
+    # }))
+    # if tool_name in ABAC_TOOLS:
+    #     creds = _assume_tenant_role(tenant_id)
+    #     if creds:
+    #         arguments["tenant_credentials"] = creds
 
     # Return modified body
     modified = body.copy()
