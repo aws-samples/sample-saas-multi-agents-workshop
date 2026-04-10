@@ -78,14 +78,22 @@ export class AgentCoreStack extends cdk.NestedStack {
       props.athenaWorkgroup,
       logMcpHandlerRole
     );
-    // UNCOMMENT:
-    // const basicRole = this.createLogMcpHandlerBasicRole();
-    // const abacRole = this.createAbacRole(basicRole, s3BucketName, props.athenaResultsBucketName, props.athenaDatabase, props.athenaTable, props.athenaWorkgroup);
-    // const logMcpLambda = this.createLogMcpHandlerLambda(s3BucketName, props.athenaResultsBucketName, props.athenaDatabase, props.athenaTable, props.athenaWorkgroup, basicRole, abacRole);
+    const basicRole = this.createLogMcpHandlerBasicRole();
+    const interceptorLambda = this.createInterceptorLambda();
     const kbMcpLambda = this.createKbMcpHandlerLambda(kbId);
 
-    // Create Gateway Interceptor Lambda
-    const interceptorLambda = this.createInterceptorLambda();
+    // UNCOMMENT:
+    // const abacRole = this.createAbacRole(interceptorLambda.role!, s3BucketName, props.athenaResultsBucketName, props.athenaDatabase, props.athenaTable, props.athenaWorkgroup);
+    // const logMcpLambda = this.createLogMcpHandlerLambda(s3BucketName, props.athenaResultsBucketName, props.athenaDatabase, props.athenaTable, props.athenaWorkgroup, basicRole, abacRole);
+    // // Set ABAC_ROLE_ARN env var and grant STS permissions on the interceptor
+    // interceptorLambda.addEnvironment("ABAC_ROLE_ARN", abacRole.roleArn);
+    // interceptorLambda.addToRolePolicy(
+    //   new iam.PolicyStatement({
+    //     actions: ["sts:AssumeRole", "sts:TagSession"],
+    //     resources: [abacRole.roleArn],
+    //   })
+    // );
+
 
     // Create IAM role for AgentCore Gateway
     const agentCoreRole = this.createAgentCoreRole();
@@ -171,23 +179,11 @@ export class AgentCoreStack extends cdk.NestedStack {
           "service-role/AWSLambdaBasicExecutionRole"
         ),
       ],
-      inlinePolicies: {
-        AssumeAbacRole: new iam.PolicyDocument({
-          statements: [
-            new iam.PolicyStatement({
-              actions: ["sts:AssumeRole", "sts:TagSession"],
-              resources: [
-                `arn:aws:iam::${this.account}:role/*LogMcpHandlerAbacRole*`,
-              ],
-            }),
-          ],
-        }),
-      },
     });
   }
 
   private createAbacRole(
-    basicRole: iam.Role,
+    interceptorRole: iam.IRole,
     s3BucketName: string,
     athenaResultsBucketName: string,
     athenaDatabase: string,
@@ -195,7 +191,7 @@ export class AgentCoreStack extends cdk.NestedStack {
     athenaWorkgroup: string
   ): iam.Role {
     const role = new iam.Role(this, "LogMcpHandlerAbacRole", {
-      assumedBy: new iam.ArnPrincipal(basicRole.roleArn),
+      assumedBy: new iam.ArnPrincipal(interceptorRole.roleArn),
       inlinePolicies: {
         TenantSpecificAccess: new iam.PolicyDocument({
           statements: [
@@ -267,7 +263,7 @@ export class AgentCoreStack extends cdk.NestedStack {
       Statement: [
         {
           Effect: "Allow",
-          Principal: { AWS: basicRole.roleArn },
+          Principal: { AWS: interceptorRole.roleArn },
           Action: ["sts:AssumeRole", "sts:TagSession"],
           Condition: {
             StringLike: {
