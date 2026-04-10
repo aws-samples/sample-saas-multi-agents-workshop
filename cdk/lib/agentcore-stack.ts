@@ -82,8 +82,7 @@ export class AgentCoreStack extends cdk.NestedStack {
     const interceptorLambda = this.createInterceptorLambda();
     const kbMcpLambda = this.createKbMcpHandlerLambda(kbId);
 
-    // UNCOMMENT:
-    // const abacRole = this.createAbacRole(basicRole, s3BucketName, props.athenaResultsBucketName, props.athenaDatabase, props.athenaTable, props.athenaWorkgroup, interceptorLambda.role);
+    // const abacRole = this.createAbacRole(interceptorLambda.role!, s3BucketName, props.athenaResultsBucketName, props.athenaDatabase, props.athenaTable, props.athenaWorkgroup);
     // const logMcpLambda = this.createLogMcpHandlerLambda(s3BucketName, props.athenaResultsBucketName, props.athenaDatabase, props.athenaTable, props.athenaWorkgroup, basicRole, abacRole);
     // // Set ABAC_ROLE_ARN env var and grant STS permissions on the interceptor
     // interceptorLambda.addEnvironment("ABAC_ROLE_ARN", abacRole.roleArn);
@@ -179,32 +178,19 @@ export class AgentCoreStack extends cdk.NestedStack {
           "service-role/AWSLambdaBasicExecutionRole"
         ),
       ],
-      inlinePolicies: {
-        AssumeAbacRole: new iam.PolicyDocument({
-          statements: [
-            new iam.PolicyStatement({
-              actions: ["sts:AssumeRole", "sts:TagSession"],
-              resources: [
-                `arn:aws:iam::${this.account}:role/*LogMcpHandlerAbacRole*`,
-              ],
-            }),
-          ],
-        }),
-      },
     });
   }
 
   private createAbacRole(
-    basicRole: iam.Role,
+    interceptorRole: iam.IRole,
     s3BucketName: string,
     athenaResultsBucketName: string,
     athenaDatabase: string,
     athenaTable: string,
-    athenaWorkgroup: string,
-    interceptorRole?: iam.IRole
+    athenaWorkgroup: string
   ): iam.Role {
     const role = new iam.Role(this, "LogMcpHandlerAbacRole", {
-      assumedBy: new iam.ArnPrincipal(basicRole.roleArn),
+      assumedBy: new iam.ArnPrincipal(interceptorRole.roleArn),
       inlinePolicies: {
         TenantSpecificAccess: new iam.PolicyDocument({
           statements: [
@@ -270,36 +256,21 @@ export class AgentCoreStack extends cdk.NestedStack {
       },
     });
 
-    const trustStatements: any[] = [
-      {
-        Effect: "Allow",
-        Principal: { AWS: basicRole.roleArn },
-        Action: ["sts:AssumeRole", "sts:TagSession"],
-        Condition: {
-          StringLike: {
-            "aws:RequestTag/tenant_id": "*",
-          },
-        },
-      },
-    ];
-
-    if (interceptorRole) {
-      trustStatements.push({
-        Effect: "Allow",
-        Principal: { AWS: interceptorRole.roleArn },
-        Action: ["sts:AssumeRole", "sts:TagSession"],
-        Condition: {
-          StringLike: {
-            "aws:RequestTag/tenant_id": "*",
-          },
-        },
-      });
-    }
-
     const cfnRole = role.node.defaultChild as iam.CfnRole;
     cfnRole.assumeRolePolicyDocument = {
       Version: "2012-10-17",
-      Statement: trustStatements,
+      Statement: [
+        {
+          Effect: "Allow",
+          Principal: { AWS: interceptorRole.roleArn },
+          Action: ["sts:AssumeRole", "sts:TagSession"],
+          Condition: {
+            StringLike: {
+              "aws:RequestTag/tenant_id": "*",
+            },
+          },
+        },
+      ],
     };
 
     return role;
