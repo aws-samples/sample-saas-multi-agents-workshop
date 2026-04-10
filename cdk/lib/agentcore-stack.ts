@@ -82,6 +82,7 @@ export class AgentCoreStack extends cdk.NestedStack {
     const interceptorLambda = this.createInterceptorLambda();
     const kbMcpLambda = this.createKbMcpHandlerLambda(kbId);
 
+    // UNCOMMENT:
     // const abacRole = this.createAbacRole(interceptorLambda.role!, s3BucketName, props.athenaResultsBucketName, props.athenaDatabase, props.athenaTable, props.athenaWorkgroup);
     // const logMcpLambda = this.createLogMcpHandlerLambda(s3BucketName, props.athenaResultsBucketName, props.athenaDatabase, props.athenaTable, props.athenaWorkgroup, basicRole, abacRole);
     // // Set ABAC_ROLE_ARN env var and grant STS permissions on the interceptor
