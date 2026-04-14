@@ -24,7 +24,7 @@ handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)
 logger.handlers = [handler]
 logger.propagate = False
 
-region = os.environ.get("AWS_REGION", "AWS_DEFAULT_REGION")
+region = os.environ.get("AWS_REGION", os.environ.get("AWS_DEFAULT_REGION", "us-west-2"))
 
 def get_stack_outputs():
     """

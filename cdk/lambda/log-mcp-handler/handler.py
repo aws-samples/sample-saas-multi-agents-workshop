@@ -19,9 +19,6 @@ ATHENA_DB = os.getenv("ATHENA_DATABASE", "saas_logs_db")
 ATHENA_WORKGROUP = os.getenv("ATHENA_WORKGROUP", "primary")
 ATHENA_OUTPUT = os.getenv("ATHENA_OUTPUT", "s3://your-athena-query-output/")
 
-# LAB 2: Uncomment for ABAC
-#ABAC_ROLE_ARN = os.getenv("ABAC_ROLE_ARN")
-
 def _wait(qid: str, athena_client, timeout_s: int = 180):
     start = time.time()
     while time.time() - start < timeout_s:
@@ -103,22 +100,16 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         sql = append_tenant_filter(user_sql, tenant_id)
         logger.info(json.dumps({"tenant_id": event.get('tenant_id'), "sql": sql}))
 
-        # LAB 2: Uncomment block below and comment out the line after it
-        # sts = boto3.client("sts", region_name=REGION)
-        # response = sts.assume_role(
-        #     RoleArn=ABAC_ROLE_ARN,
-        #     RoleSessionName=f"tenant-{event.get('tenant_id')}-session",
-        #     Tags=[{'Key': 'tenant_id', 'Value': event.get('tenant_id')}]
-        # )
-        # creds = response['Credentials']
-        # athena_client = boto3.client(
-        #     "athena", region_name=REGION,
-        #     aws_access_key_id=creds['AccessKeyId'],
-        #     aws_secret_access_key=creds['SecretAccessKey'],
-        #     aws_session_token=creds['SessionToken']
-        # )
-        # LAB 2: Comment this line
-        athena_client = boto3.client("athena", region_name=REGION)
+        tenant_creds = event.get("tenant_credentials")
+        if tenant_creds:
+            athena_client = boto3.client(
+                "athena", region_name=REGION,
+                aws_access_key_id=tenant_creds["access_key_id"],
+                aws_secret_access_key=tenant_creds["secret_access_key"],
+                aws_session_token=tenant_creds["session_token"],
+            )
+        else:
+            athena_client = boto3.client("athena", region_name=REGION)
 
         db = event.get("database") or ATHENA_DB
         rows = _exec(sql, athena_client, database=db)
