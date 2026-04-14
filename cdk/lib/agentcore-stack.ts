@@ -34,14 +34,14 @@ export class AgentCoreStack extends cdk.NestedStack {
     const logsBucket = s3.Bucket.fromBucketName(
       this,
       "LogsBucket",
-      props.s3BucketName
+      props.s3BucketName,
     );
 
     // Import existing Athena results bucket
     const athenaResultsBucket = s3.Bucket.fromBucketName(
       this,
       "AthenaResultsBucket",
-      props.athenaResultsBucketName
+      props.athenaResultsBucketName,
     );
 
     // Use the existing user pool from props
@@ -54,7 +54,7 @@ export class AgentCoreStack extends cdk.NestedStack {
     // We're creating one resource server for both gateways
     const resourceServerInfo = this.createResourceServer(
       userPool,
-      "AgentCore-Gateway"
+      "AgentCore-Gateway",
     );
 
     // Create app clients
@@ -68,7 +68,7 @@ export class AgentCoreStack extends cdk.NestedStack {
       props.athenaResultsBucketName,
       props.athenaDatabase,
       props.athenaTable,
-      props.athenaWorkgroup
+      props.athenaWorkgroup,
     );
     const logMcpLambda = this.createLogMcpHandlerLambda(
       s3BucketName,
@@ -76,13 +76,13 @@ export class AgentCoreStack extends cdk.NestedStack {
       props.athenaDatabase,
       props.athenaTable,
       props.athenaWorkgroup,
-      logMcpHandlerRole
+      logMcpHandlerRole,
     );
     const basicRole = this.createLogMcpHandlerBasicRole();
     const interceptorLambda = this.createInterceptorLambda();
     const kbMcpLambda = this.createKbMcpHandlerLambda(kbId);
 
-    // UNCOMMENT:
+    // ========== TODO LAB 2: ADD ABAC ROLE ==========
     // const abacRole = this.createAbacRole(interceptorLambda.role!, s3BucketName, props.athenaResultsBucketName, props.athenaDatabase, props.athenaTable, props.athenaWorkgroup);
     // const logMcpLambda = this.createLogMcpHandlerLambda(s3BucketName, props.athenaResultsBucketName, props.athenaDatabase, props.athenaTable, props.athenaWorkgroup, basicRole, abacRole);
     // // Set ABAC_ROLE_ARN env var and grant STS permissions on the interceptor
@@ -93,7 +93,6 @@ export class AgentCoreStack extends cdk.NestedStack {
     //     resources: [abacRole.roleArn],
     //   })
     // );
-
 
     // Create IAM role for AgentCore Gateway
     const agentCoreRole = this.createAgentCoreRole();
@@ -114,7 +113,7 @@ export class AgentCoreStack extends cdk.NestedStack {
     // Create CloudWatch log groups for gateway logs
     const logGatewayLogGroup = this.createGatewayLogGroup("LogGateway");
     const kbGatewayLogGroup = this.createGatewayLogGroup(
-      "KnowledgeBaseGateway"
+      "KnowledgeBaseGateway",
     );
     logGatewayLogGroup.grantWrite(agentCoreRole);
     kbGatewayLogGroup.grantWrite(agentCoreRole);
@@ -176,7 +175,7 @@ export class AgentCoreStack extends cdk.NestedStack {
       assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
       managedPolicies: [
         iam.ManagedPolicy.fromAwsManagedPolicyName(
-          "service-role/AWSLambdaBasicExecutionRole"
+          "service-role/AWSLambdaBasicExecutionRole",
         ),
       ],
     });
@@ -188,7 +187,7 @@ export class AgentCoreStack extends cdk.NestedStack {
     athenaResultsBucketName: string,
     athenaDatabase: string,
     athenaTable: string,
-    athenaWorkgroup: string
+    athenaWorkgroup: string,
   ): iam.Role {
     const role = new iam.Role(this, "LogMcpHandlerAbacRole", {
       assumedBy: new iam.ArnPrincipal(interceptorRole.roleArn),
@@ -282,13 +281,13 @@ export class AgentCoreStack extends cdk.NestedStack {
     athenaResultsBucketName: string,
     athenaDatabase: string,
     athenaTable: string,
-    athenaWorkgroup: string
+    athenaWorkgroup: string,
   ): iam.Role {
     return new iam.Role(this, "LogMcpHandlerRole", {
       assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
       managedPolicies: [
         iam.ManagedPolicy.fromAwsManagedPolicyName(
-          "service-role/AWSLambdaBasicExecutionRole"
+          "service-role/AWSLambdaBasicExecutionRole",
         ),
       ],
       inlinePolicies: {
@@ -361,7 +360,7 @@ export class AgentCoreStack extends cdk.NestedStack {
     return new lambda.LayerVersion(this, "SqlModifierLayer", {
       layerVersionName: "sql-modifier-layer",
       code: lambda.Code.fromAsset(
-        path.join(__dirname, "../lambda/layers/sql-modifier")
+        path.join(__dirname, "../lambda/layers/sql-modifier"),
       ),
       compatibleRuntimes: [lambda.Runtime.PYTHON_3_12],
       description:
@@ -376,7 +375,7 @@ export class AgentCoreStack extends cdk.NestedStack {
     athenaTable: string,
     athenaWorkgroup: string,
     role: iam.Role,
-    abacRole?: iam.Role
+    abacRole?: iam.Role,
   ) {
     const sqlModifierLayer = this.createSqlModifierLayer();
     const env: Record<string, string> = {
@@ -394,7 +393,7 @@ export class AgentCoreStack extends cdk.NestedStack {
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: "handler.handler",
       code: lambda.Code.fromAsset(
-        path.join(__dirname, "../lambda/log-mcp-handler")
+        path.join(__dirname, "../lambda/log-mcp-handler"),
       ),
       role: role,
       timeout: cdk.Duration.seconds(60),
@@ -409,7 +408,7 @@ export class AgentCoreStack extends cdk.NestedStack {
       assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
       managedPolicies: [
         iam.ManagedPolicy.fromAwsManagedPolicyName(
-          "service-role/AWSLambdaBasicExecutionRole"
+          "service-role/AWSLambdaBasicExecutionRole",
         ),
       ],
       inlinePolicies: {
@@ -442,7 +441,7 @@ export class AgentCoreStack extends cdk.NestedStack {
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: "handler.handler",
       code: lambda.Code.fromAsset(
-        path.join(__dirname, "../lambda/kb-mcp-handler")
+        path.join(__dirname, "../lambda/kb-mcp-handler"),
       ),
       role: kbRole,
       environment: {
@@ -460,7 +459,7 @@ export class AgentCoreStack extends cdk.NestedStack {
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: "handler.handler",
       code: lambda.Code.fromAsset(
-        path.join(__dirname, "../lambda/gateway-interceptor")
+        path.join(__dirname, "../lambda/gateway-interceptor"),
       ),
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
@@ -469,7 +468,7 @@ export class AgentCoreStack extends cdk.NestedStack {
 
   private createResourceServer(
     userPool: cdk.aws_cognito.UserPool,
-    identifier: string
+    identifier: string,
   ): {
     server: cognito.UserPoolResourceServer;
     scope: cognito.ResourceServerScope;
