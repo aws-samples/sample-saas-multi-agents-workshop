@@ -72,13 +72,13 @@ export class Services extends Construct {
         assumedBy: new ServicePrincipal("lambda.amazonaws.com"),
         managedPolicies: [
           ManagedPolicy.fromAwsManagedPolicyName(
-            "CloudWatchLambdaInsightsExecutionRolePolicy"
+            "CloudWatchLambdaInsightsExecutionRolePolicy",
           ),
           ManagedPolicy.fromAwsManagedPolicyName(
-            "service-role/AWSLambdaBasicExecutionRole"
+            "service-role/AWSLambdaBasicExecutionRole",
           ),
         ],
-      }
+      },
     );
 
     authorizerLambdaExecRole.addToPolicy(
@@ -88,7 +88,7 @@ export class Services extends Construct {
         resources: [
           `arn:aws:cognito-idp:${region}:${accountId}:userpool/${props.userPoolID}`,
         ],
-      })
+      }),
     );
 
     // Create role only if tenantTokenUsageTable is provided
@@ -126,7 +126,7 @@ export class Services extends Construct {
               "aws:RequestTag/TenantId": "*",
             },
           },
-        })
+        }),
       );
     }
 
@@ -138,10 +138,10 @@ export class Services extends Construct {
       assumedBy: new ServicePrincipal("lambda.amazonaws.com"),
       managedPolicies: [
         ManagedPolicy.fromAwsManagedPolicyName(
-          "CloudWatchLambdaInsightsExecutionRolePolicy"
+          "CloudWatchLambdaInsightsExecutionRolePolicy",
         ),
         ManagedPolicy.fromAwsManagedPolicyName(
-          "service-role/AWSLambdaBasicExecutionRole"
+          "service-role/AWSLambdaBasicExecutionRole",
         ),
       ],
       inlinePolicies: {
@@ -156,21 +156,28 @@ export class Services extends Construct {
               effect: Effect.ALLOW,
               actions: ["bedrock:InvokeModel", "bedrock:GetInferenceProfile"],
               resources: [
-                "arn:aws:bedrock:*::foundation-model/global.anthropic.claude-sonnet-4-20250514-v1:0",
-                "arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-20250514-v1:0",
-                `arn:aws:bedrock:*:${accountId}:inference-profile/global.anthropic.claude-sonnet-4-20250514-v1:0`,
+                "arn:aws:bedrock:*::foundation-model/global.anthropic.claude-sonnet-4-6",
+                `arn:aws:bedrock:*:${accountId}:inference-profile/global.anthropic.claude-sonnet-4-6`,
               ],
             }),
             new PolicyStatement({
               effect: Effect.ALLOW,
-              actions: ["aws-marketplace:ViewSubscriptions", "aws-marketplace:Subscribe", "aws-marketplace:Unsubscribe"],
+              actions: [
+                "aws-marketplace:ViewSubscriptions",
+                "aws-marketplace:Subscribe",
+                "aws-marketplace:Unsubscribe",
+              ],
               resources: ["*"],
               conditions: {
                 "ForAllValues:StringEquals": {
-                  "aws-marketplace:ProductId": ["prod-4pmewlybdftbs", "prod-mxcfnwvpd6kb4", "prod-xdkflymybwmvi"]
+                  "aws-marketplace:ProductId": [
+                    "prod-4pmewlybdftbs",
+                    "prod-mxcfnwvpd6kb4",
+                    "prod-xdkflymybwmvi",
+                  ],
                 },
-            }
-        }),
+              },
+            }),
             new PolicyStatement({
               effect: Effect.ALLOW,
               actions: [
@@ -199,7 +206,7 @@ export class Services extends Construct {
                     account: accountId,
                     region: region,
                   },
-                  Stack.of(this)
+                  Stack.of(this),
                 ),
               ],
             }),
@@ -219,7 +226,7 @@ export class Services extends Construct {
             "aws:RequestTag/KnowledgeBaseId": "*",
           },
         },
-      })
+      }),
     );
 
     const authorizerService = new python.PythonFunction(
@@ -250,7 +257,7 @@ export class Services extends Construct {
               tenantTokenUsageTableAccessRole?.roleArn || "",
           }),
         },
-      }
+      },
     );
 
     const authorizer = new apigw.RequestAuthorizer(
@@ -260,7 +267,7 @@ export class Services extends Construct {
         handler: authorizerService,
         identitySources: [apigw.IdentitySource.header("authorization")],
         resultsCacheTtl: Duration.seconds(0),
-      }
+      },
     );
 
     // Agent Core lambda
@@ -268,10 +275,10 @@ export class Services extends Construct {
       assumedBy: new ServicePrincipal("lambda.amazonaws.com"),
       managedPolicies: [
         ManagedPolicy.fromAwsManagedPolicyName(
-          "CloudWatchLambdaInsightsExecutionRolePolicy"
+          "CloudWatchLambdaInsightsExecutionRolePolicy",
         ),
         ManagedPolicy.fromAwsManagedPolicyName(
-          "service-role/AWSLambdaBasicExecutionRole"
+          "service-role/AWSLambdaBasicExecutionRole",
         ),
       ],
     });
@@ -284,13 +291,13 @@ export class Services extends Construct {
         assumedBy: new ServicePrincipal("lambda.amazonaws.com"),
         managedPolicies: [
           ManagedPolicy.fromAwsManagedPolicyName(
-            "CloudWatchLambdaInsightsExecutionRolePolicy"
+            "CloudWatchLambdaInsightsExecutionRolePolicy",
           ),
           ManagedPolicy.fromAwsManagedPolicyName(
-            "service-role/AWSLambdaBasicExecutionRole"
+            "service-role/AWSLambdaBasicExecutionRole",
           ),
         ],
-      }
+      },
     );
 
     const ragResolutionService = new python.PythonFunction(
@@ -314,7 +321,7 @@ export class Services extends Construct {
           POWERTOOLS_SERVICE_NAME: "RagResolutionService",
           POWERTOOLS_METRICS_NAMESPACE: "SaaSRagResolutionGenAI",
         },
-      }
+      },
     );
 
     resolution.addMethod(
@@ -324,7 +331,7 @@ export class Services extends Construct {
         authorizer: authorizer,
         authorizationType: apigw.AuthorizationType.CUSTOM,
         apiKeyRequired: true,
-      }
+      },
     );
 
     // S3 Uploader lambda
@@ -332,10 +339,10 @@ export class Services extends Construct {
       assumedBy: new ServicePrincipal("lambda.amazonaws.com"),
       managedPolicies: [
         ManagedPolicy.fromAwsManagedPolicyName(
-          "CloudWatchLambdaInsightsExecutionRolePolicy"
+          "CloudWatchLambdaInsightsExecutionRolePolicy",
         ),
         ManagedPolicy.fromAwsManagedPolicyName(
-          "service-role/AWSLambdaBasicExecutionRole"
+          "service-role/AWSLambdaBasicExecutionRole",
         ),
       ],
     });
@@ -365,7 +372,7 @@ export class Services extends Construct {
       {
         authorizer: authorizer,
         authorizationType: apigw.AuthorizationType.CUSTOM,
-      }
+      },
     );
 
     // S3 Logs Uploader lambda
@@ -373,10 +380,10 @@ export class Services extends Construct {
       assumedBy: new ServicePrincipal("lambda.amazonaws.com"),
       managedPolicies: [
         ManagedPolicy.fromAwsManagedPolicyName(
-          "CloudWatchLambdaInsightsExecutionRolePolicy"
+          "CloudWatchLambdaInsightsExecutionRolePolicy",
         ),
         ManagedPolicy.fromAwsManagedPolicyName(
-          "service-role/AWSLambdaBasicExecutionRole"
+          "service-role/AWSLambdaBasicExecutionRole",
         ),
       ],
     });
@@ -406,7 +413,7 @@ export class Services extends Construct {
       {
         authorizer: authorizer,
         authorizationType: apigw.AuthorizationType.CUSTOM,
-      }
+      },
     );
 
     // Trigger data ingestion lambda
@@ -417,13 +424,13 @@ export class Services extends Construct {
         assumedBy: new ServicePrincipal("lambda.amazonaws.com"),
         managedPolicies: [
           ManagedPolicy.fromAwsManagedPolicyName(
-            "CloudWatchLambdaInsightsExecutionRolePolicy"
+            "CloudWatchLambdaInsightsExecutionRolePolicy",
           ),
           ManagedPolicy.fromAwsManagedPolicyName(
-            "service-role/AWSLambdaBasicExecutionRole"
+            "service-role/AWSLambdaBasicExecutionRole",
           ),
         ],
-      }
+      },
     );
 
     // ABAC role which will be assumed by the Data Ingestion  lambda
@@ -432,7 +439,7 @@ export class Services extends Construct {
       "TriggerDataIngestionServiceAssumeRole",
       {
         assumedBy: new ServicePrincipal("lambda.amazonaws.com"),
-      }
+      },
     );
 
     triggerDataIngestionServiceAssumeRole.assumeRolePolicy?.addStatements(
@@ -440,7 +447,7 @@ export class Services extends Construct {
         actions: ["sts:AssumeRole", "sts:TagSession"],
         effect: Effect.ALLOW,
         principals: [new ArnPrincipal(triggerDataIngestionExecRole.roleArn)],
-      })
+      }),
     );
 
     triggerDataIngestionServiceAssumeRole.addToPolicy(
@@ -456,10 +463,10 @@ export class Services extends Construct {
               account: accountId,
               region: region,
             },
-            Stack.of(this)
+            Stack.of(this),
           ),
         ],
-      })
+      }),
     );
 
     const triggerDataIngestionService = new python.PythonFunction(
@@ -481,7 +488,7 @@ export class Services extends Construct {
         environment: {
           ASSUME_ROLE_ARN: triggerDataIngestionServiceAssumeRole.roleArn,
         },
-      }
+      },
     );
 
     this.triggerDataIngestionService = triggerDataIngestionService;
@@ -494,7 +501,7 @@ export class Services extends Construct {
         account: accountId,
         region: region,
       },
-      Stack.of(this)
+      Stack.of(this),
     );
     triggerDataIngestionService.addPermission(
       "EventBusTriggerDataIngestionPermission",
@@ -502,7 +509,7 @@ export class Services extends Construct {
         principal: new ServicePrincipal("events.amazonaws.com"),
         action: "lambda:InvokeFunction",
         sourceArn: eventBusRuleArn,
-      }
+      },
     );
   }
 }
