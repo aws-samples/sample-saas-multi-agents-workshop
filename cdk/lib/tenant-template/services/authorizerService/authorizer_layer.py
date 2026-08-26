@@ -95,7 +95,7 @@ class AuthPolicy:
     """The principal used for the policy, this should be a unique identifier for the end user."""
     version = "2012-10-17"
     """The policy version used for the evaluation."""
-    pathRegex = "^[/.a-zA-Z0-9-\*]+$"
+    pathRegex = r"^[/.a-zA-Z0-9-\*]+$"
     """The regular expression used to validate resource paths for the policy"""
 
     allowMethods = []

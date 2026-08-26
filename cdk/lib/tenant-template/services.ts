@@ -156,7 +156,7 @@ export class Services extends Construct {
               effect: Effect.ALLOW,
               actions: ["bedrock:InvokeModel", "bedrock:GetInferenceProfile"],
               resources: [
-                "arn:aws:bedrock:*::foundation-model/global.anthropic.claude-sonnet-4-6",
+                "arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-6",
                 `arn:aws:bedrock:*:${accountId}:inference-profile/global.anthropic.claude-sonnet-4-6`,
               ],
             }),
