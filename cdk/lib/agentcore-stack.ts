@@ -568,11 +568,12 @@ export class AgentCoreStack extends cdk.NestedStack {
                 "aws-marketplace:Unsubscribe",
               ],
               resources: ["*"],
-              conditions: {
-                StringEquals: {
-                  "aws:CalledViaLast": "bedrock.amazonaws.com",
-                },
-              },
+              // NOTE: Removed the `aws:CalledViaLast == bedrock.amazonaws.com`
+              // condition. During first-time model access, the Marketplace
+              // subscription check for Claude Sonnet 4 does not carry that
+              // condition key, so the statement never applied and the
+              // subscription failed with an AccessDeniedException on
+              // aws-marketplace:ViewSubscriptions / Subscribe.
             }),
             // CloudWatch Logs
             new iam.PolicyStatement({
