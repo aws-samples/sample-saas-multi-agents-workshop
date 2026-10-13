@@ -72,7 +72,12 @@ def lambda_handler(event, context):
         logger.error('Unauthorized')
         return authorizer_layer.create_auth_denied_policy(method_arn)
     else:
-        tenant_id = response["custom:tenantId"]
+        tenant_id = response.get("custom:tenantId")
+        # Defense in depth: tenant membership is also enforced via the Cognito
+        # group named after the tenant, which only admins can assign.
+        if not tenant_id or tenant_id not in response.get("cognito:groups", []):
+            logger.error('Unauthorized: tenantId claim does not match tenant group membership')
+            return authorizer_layer.create_auth_denied_policy(method_arn)
         response_url = control_plane_gw_url + f'tenant-config?tenantId={tenant_id}'
         if is_safe_url(response_url):
             with urllib.request.urlopen(response_url, timeout=10) as resp:

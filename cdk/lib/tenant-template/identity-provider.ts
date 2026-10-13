@@ -55,9 +55,13 @@ export class IdentityProvider extends Construct {
       aws_cognito.LambdaVersion.V2_0
     );
 
+    // SECURITY: custom:tenantId and custom:userRole are authorization claims.
+    // They MUST NOT be client-writable, otherwise an authenticated user could call
+    // UpdateUserAttributes with their own access token and switch tenants.
+    // These attributes are set only via admin APIs (AdminCreateUser /
+    // AdminUpdateUserAttributes) in user_management_service.py.
     const writeAttributes = new aws_cognito.ClientAttributes()
-      .withStandardAttributes({ email: true })
-      .withCustomAttributes("tenantId", "userRole");
+      .withStandardAttributes({ email: true });
 
     this.tenantUserPoolClient = new aws_cognito.UserPoolClient(
       this,
