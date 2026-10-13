@@ -62,7 +62,13 @@ def _extract_tenant_id(headers: Dict[str, str]) -> Optional[str]:
 
     try:
         claims = _decode_jwt_payload(token)
-        return claims.get("tenantId") or claims.get("custom:tenantId")
+        tenant_id = claims.get("tenantId") or claims.get("custom:tenantId")
+        # Defense in depth: only trust tenantId if the user belongs to the
+        # matching Cognito tenant group, which only admins can assign.
+        if not tenant_id or tenant_id not in claims.get("cognito:groups", []):
+            logger.warning("tenantId claim does not match tenant group membership")
+            return None
+        return tenant_id
     except Exception as e:
         logger.warning(f"Failed to decode JWT: {e}")
         return None

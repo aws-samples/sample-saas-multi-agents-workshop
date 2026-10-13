@@ -490,6 +490,10 @@ export class AgentCoreStack extends cdk.NestedStack {
     return userPool.addClient("user-client", {
       userPoolClientName: "user-client",
       generateSecret: false,
+      // SECURITY: tenant authorization claims (custom:tenantId, custom:userRole)
+      // must not be client-writable. Without an explicit list, Cognito allows
+      // writes to all mutable attributes.
+      writeAttributes: new cognito.ClientAttributes().withStandardAttributes({ email: true }),
       authFlows: {
         userPassword: true,
         adminUserPassword: true,
@@ -525,6 +529,7 @@ export class AgentCoreStack extends cdk.NestedStack {
     return userPool.addClient("m2m-client", {
       userPoolClientName: "m2m-client",
       generateSecret: true,
+      writeAttributes: new cognito.ClientAttributes().withStandardAttributes({ email: true }),
       supportedIdentityProviders: [
         cognito.UserPoolClientIdentityProvider.COGNITO,
       ],
